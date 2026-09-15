@@ -206,7 +206,7 @@ struct DockRoot: View {
             stripOrder: settings.stripOrder
         )
         .frame(
-            width: settings.metrics.stripWidth(items: settings.stripOrder),
+            width: settings.metrics.stripWidth(items: StripItem.foldingAppsCoveredByWidgets(settings.stripOrder)),
             height: settings.metrics.dockHeight
         )
         .padding(settings.metrics.shadowBleed)

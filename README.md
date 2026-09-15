@@ -9,6 +9,19 @@ to Apple's Dock.
 ```bash
 ./build.sh --install     # build, copy to /Applications, launch
 ./build.sh               # build only, into ./build
+./build.sh --release     # notarize, staple, write ./build/Pier-0.1.0.zip
+./build.sh --publish     # --release, then upload that zip to GitHub Releases
+```
+
+On a machine without `/Applications` write access or a Swift toolchain,
+download the zip from [Releases](https://github.com/thewhatmatters/pier/releases)
+and extract it with Archive Utility or `ditto` — not `unzip`, which breaks
+the signature:
+
+```bash
+mkdir -p ~/Applications
+ditto -x -k Pier-0.1.0.zip ~/Applications
+open ~/Applications/Pier.app
 ```
 
 While Pier is running, Apple's Dock is hidden by default (auto-hide plus a

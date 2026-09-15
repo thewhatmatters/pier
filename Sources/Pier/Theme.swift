@@ -82,16 +82,20 @@ enum Theme {
         var tileSize: CGFloat
 
         var iconSize: CGFloat { widgetInnerHeight }
+        /// Workspace icons include canvas margin; scale so the mark matches the widget card.
+        var iconOpticalScale: CGFloat { 1.18 }
         var tileWidth: CGFloat { iconSize }
-        var gap: CGFloat { max(2, (tileSize * 0.04).rounded()) }
-        var widgetGap: CGFloat { max(6, (tileSize * 0.2).rounded()) }
+        var gap: CGFloat { max(4, (tileSize * 0.04).rounded()) }
+        var widgetGap: CGFloat { gap }
         var verticalPadding: CGFloat { max(6, (tileSize * 0.2).rounded()) }
         var horizontalPadding: CGFloat { max(10, (tileSize * 0.35).rounded()) }
         var runningMarkHeight: CGFloat { 2 }
         var runningMarkRadius: CGFloat { 2 }
         var dockBottomPadding: CGFloat { max(verticalPadding, runningMarkHeight) }
+        var widgetInset: CGFloat { 4 }
+        var widgetCycleWidth: CGFloat { 16 }
         var widgetInnerHeight: CGFloat {
-            max(tileSize + 8, widgetTemp + widgetCaption + 12).rounded()
+            (widgetGlyph + widgetInset * 2).rounded()
         }
         var dockHeight: CGFloat {
             (widgetInnerHeight + verticalPadding * 2).rounded()
@@ -101,7 +105,8 @@ enum Theme {
         }
 
         func windowSize(items: [StripItem], maxWidth: CGFloat) -> NSSize {
-            let width = min(stripWidth(items: items) + shadowBleed * 2, maxWidth)
+            let visible = StripItem.foldingAppsCoveredByWidgets(items)
+            let width = min(stripWidth(items: visible) + shadowBleed * 2, maxWidth)
             return NSSize(width: width, height: dockHeight + shadowBleed * 2)
         }
         var widgetHeight: CGFloat { widgetInnerHeight }
@@ -122,9 +127,8 @@ enum Theme {
             }
         }
 
-        func spacing(between a: StripItem, and b: StripItem) -> CGFloat {
-            if case .app = a, case .app = b { return gap }
-            return widgetGap
+        func spacing(between _: StripItem, and _: StripItem) -> CGFloat {
+            gap
         }
 
         /// Width of the whole strip. Kept in one place so the window can

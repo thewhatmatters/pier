@@ -8,6 +8,22 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var bundleID: String {
+        switch self {
+        case .cursor: return NativeDock.cursorBundleID
+        case .calendar: return AppMarks.calendarBundleID
+        case .weather: return "com.apple.weather"
+        }
+    }
+
+    var fallbackName: String {
+        switch self {
+        case .cursor: return "Cursor"
+        case .calendar: return "Calendar"
+        case .weather: return "Weather"
+        }
+    }
+
     static let standard: [WidgetKind] = [.cursor, .calendar, .weather]
 
     static func normalized(_ order: [WidgetKind]) -> [WidgetKind] {
@@ -55,7 +71,19 @@ enum StripItem: Equatable, Identifiable, Codable {
         for kind in WidgetKind.standard where seenWidget.insert(kind).inserted {
             result.append(.widget(kind))
         }
-        return result
+        return foldingAppsCoveredByWidgets(result)
+    }
+
+    /// A Cursor/Calendar/Weather pin is the widget, not a second icon.
+    static func foldingAppsCoveredByWidgets(_ items: [StripItem]) -> [StripItem] {
+        let claimed = Set(items.compactMap { item -> String? in
+            if case .widget(let kind) = item { return kind.bundleID }
+            return nil
+        })
+        return items.filter { item in
+            guard case .app(let bundleID) = item else { return true }
+            return !claimed.contains(bundleID)
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -111,7 +139,7 @@ final class DockReorder: ObservableObject {
     private var metrics = Theme.metrics(tileSize: Theme.defaultTileSize)
 
     func begin(item: StripItem, metrics: Theme.Metrics) {
-        origin = Settings.shared.stripOrder
+        origin = StripItem.foldingAppsCoveredByWidgets(Settings.shared.stripOrder)
         startIndex = origin.firstIndex(of: item) ?? 0
         self.metrics = metrics
         draggingID = item.id

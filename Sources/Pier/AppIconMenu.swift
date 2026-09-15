@@ -17,7 +17,12 @@ final class AppMenuController: NSObject {
 }
 
 enum AppIconMenu {
-    static func make(app: PinnedApp, running: Bool, controller: AppMenuController) -> NSMenu {
+    static func make(
+        app: PinnedApp,
+        running: Bool,
+        controller: AppMenuController,
+        includeRemove: Bool = true
+    ) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -48,9 +53,11 @@ enum AppIconMenu {
         reveal.target = controller
         menu.addItem(reveal)
 
-        let remove = NSMenuItem(title: "Remove from Pier", action: #selector(AppMenuController.remove), keyEquivalent: "")
-        remove.target = controller
-        menu.addItem(remove)
+        if includeRemove {
+            let remove = NSMenuItem(title: "Remove from Pier", action: #selector(AppMenuController.remove), keyEquivalent: "")
+            remove.target = controller
+            menu.addItem(remove)
+        }
 
         return menu
     }
@@ -84,6 +91,8 @@ struct AppTileClickLayer: NSViewRepresentable {
 
 struct WidgetClickLayer: NSViewRepresentable {
     let kind: WidgetKind
+    var app: PinnedApp?
+    var running: Bool = false
     let metrics: Theme.Metrics
     let onOpen: () -> Void
 
@@ -98,9 +107,9 @@ struct WidgetClickLayer: NSViewRepresentable {
     }
 
     private func apply(_ view: TileClickCatcher) {
-        view.app = nil
+        view.app = app
         view.kind = kind
-        view.running = false
+        view.running = running
         view.onOpen = onOpen
         view.onDragBegin = { DockReorder.shared.begin(item: .widget(kind), metrics: metrics) }
         view.onDragChanged = { DockReorder.shared.update(translationX: $0) }
@@ -250,25 +259,40 @@ final class TileClickCatcher: NSView {
         if let app {
             let controller = AppMenuController(app: app)
             self.controller = controller
-            let menu = AppIconMenu.make(app: app, running: running, controller: controller)
+            let menu = AppIconMenu.make(
+                app: app,
+                running: running,
+                controller: controller,
+                includeRemove: kind == nil
+            )
+            if kind == .weather {
+                appendWeatherItems(to: menu)
+            }
             menu.popUp(positioning: nil, at: location, in: self)
             return
         }
         if kind == .weather {
-            let controller = WeatherMenuController()
-            weatherController = controller
             let menu = NSMenu()
             menu.autoenablesItems = false
-            let add = NSMenuItem(title: "Add City…", action: #selector(WeatherMenuController.addCity), keyEquivalent: "")
-            add.target = controller
-            menu.addItem(add)
-            let remove = NSMenuItem(title: "Remove City", action: #selector(WeatherMenuController.removeCity), keyEquivalent: "")
-            remove.target = controller
-            let city = Store.shared.snapshot.weather?.city
-            remove.isEnabled = Settings.shared.weatherPlaces.contains { $0.name == city }
-            menu.addItem(remove)
+            appendWeatherItems(to: menu)
             menu.popUp(positioning: nil, at: location, in: self)
         }
+    }
+
+    private func appendWeatherItems(to menu: NSMenu) {
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
+        let controller = WeatherMenuController()
+        weatherController = controller
+        let add = NSMenuItem(title: "Add City…", action: #selector(WeatherMenuController.addCity), keyEquivalent: "")
+        add.target = controller
+        menu.addItem(add)
+        let remove = NSMenuItem(title: "Remove City", action: #selector(WeatherMenuController.removeCity), keyEquivalent: "")
+        remove.target = controller
+        let city = Store.shared.snapshot.weather?.city
+        remove.isEnabled = Settings.shared.weatherPlaces.contains { $0.name == city }
+        menu.addItem(remove)
     }
 
     static func located(at windowPoint: NSPoint, in window: NSWindow?) -> TileClickCatcher? {

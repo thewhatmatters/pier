@@ -122,6 +122,14 @@ enum SelfTest {
         check("larger tiles make a taller dock", large.dockHeight > small.dockHeight)
         check("larger tiles make larger icons", large.iconSize > small.iconSize)
         check("app icons match widget height", small.iconSize == small.widgetInnerHeight && large.iconSize == large.widgetInnerHeight)
+        check("app icons fill the widget card", small.iconOpticalScale > 1 && large.iconOpticalScale == small.iconOpticalScale)
+        check("widget inset is 4", small.widgetInset == 4 && large.widgetInset == 4)
+        check("strip gap is 4", small.gap == 4 && Theme.metrics(tileSize: 36).gap == 4)
+        check(
+            "widget icon sits in equal inset",
+            small.widgetInnerHeight == small.widgetGlyph + small.widgetInset * 2
+                && large.widgetInnerHeight == large.widgetGlyph + large.widgetInset * 2
+        )
         check("running mark is a 2pt bottom tab", small.runningMarkHeight == 2 && small.runningMarkRadius == 2)
         check("clamp high", Theme.clampedTile(400) == Theme.maxTileSize)
         check("clamp low", Theme.clampedTile(1) == Theme.minTileSize)
@@ -142,7 +150,25 @@ enum SelfTest {
                 .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.calendar)
             ]
         )
+        let cursor = PinnedApp(bundleID: NativeDock.cursorBundleID, name: "Cursor", path: "/Applications/Cursor.app")
+        check(
+            "widget swallows its own app pin",
+            StripItem.normalized(
+                [.app(cursor.bundleID), .widget(.cursor), .app(safari.bundleID)],
+                apps: [cursor, safari]
+            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.calendar), .widget(.weather)]
+        )
+        check("cursor widget hosts Cursor", WidgetKind.cursor.bundleID == NativeDock.cursorBundleID)
+        check("calendar widget hosts Calendar", WidgetKind.calendar.bundleID == AppMarks.calendarBundleID)
+        check("weather widget hosts Weather", WidgetKind.weather.bundleID == "com.apple.weather")
         let metrics = Theme.metrics(tileSize: 36)
+        check(
+            "strip spacing is even",
+            metrics.spacing(between: .app(safari.bundleID), and: .app(mail.bundleID))
+                == metrics.spacing(between: .app(safari.bundleID), and: .widget(.cursor))
+                && metrics.spacing(between: .widget(.cursor), and: .widget(.weather))
+                == metrics.gap
+        )
         let trio: [StripItem] = [.app(safari.bundleID), .app(mail.bundleID), .widget(.cursor)]
         check(
             "no drag keeps slot",

@@ -162,8 +162,13 @@ final class Settings: ObservableObject {
             if case .app(let bundleID) = item { return bundleID }
             return nil
         }
+        let claimed = Set(WidgetKind.standard.map(\.bundleID))
         let byID = Dictionary(uniqueKeysWithValues: pinnedApps.map { ($0.bundleID, $0) })
-        let nextApps = ids.compactMap { byID[$0] }
+        var nextApps = ids.compactMap { byID[$0] }
+        for app in pinnedApps where claimed.contains(app.bundleID)
+            && !nextApps.contains(where: { $0.bundleID == app.bundleID }) {
+            nextApps.append(app)
+        }
         if nextApps.map(\.bundleID) != pinnedApps.map(\.bundleID) {
             pinnedApps = nextApps
         }

@@ -17,19 +17,28 @@ struct DockView: View {
         Dictionary(uniqueKeysWithValues: snapshot.apps.map { ($0.bundleID, $0) })
     }
 
+    private var visibleStrip: [StripItem] {
+        StripItem.foldingAppsCoveredByWidgets(stripOrder)
+    }
+
+    private func hostApp(for kind: WidgetKind) -> PinnedApp? {
+        appsByID[kind.bundleID]
+            ?? NativeDock.application(bundleID: kind.bundleID, fallbackName: kind.fallbackName)
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             HStack(spacing: 0) {
-                ForEach(Array(stripOrder.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(visibleStrip.enumerated()), id: \.element.id) { index, item in
                     stripItem(item)
-                    if index + 1 < stripOrder.count {
+                    if index + 1 < visibleStrip.count {
                         Color.clear.frame(
-                            width: metrics.spacing(between: item, and: stripOrder[index + 1])
+                            width: metrics.spacing(between: item, and: visibleStrip[index + 1])
                         )
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.16), value: stripOrder.map(\.id))
+            .animation(.easeInOut(duration: 0.16), value: visibleStrip.map(\.id))
             .padding(.horizontal, metrics.horizontalPadding)
             .padding(.vertical, metrics.verticalPadding)
 
@@ -68,6 +77,8 @@ struct DockView: View {
             CursorWidget(
                 snapshot: snapshot.cursor,
                 agents: snapshot.agents,
+                app: hostApp(for: .cursor),
+                running: snapshot.runningBundleIDs.contains(WidgetKind.cursor.bundleID),
                 metrics: metrics,
                 palette: palette,
                 action: onOpenCursor
@@ -75,6 +86,8 @@ struct DockView: View {
         case .calendar:
             CalendarWidget(
                 snapshot: snapshot.calendar,
+                app: hostApp(for: .calendar),
+                running: snapshot.runningBundleIDs.contains(WidgetKind.calendar.bundleID),
                 metrics: metrics,
                 palette: palette,
                 action: onOpenCalendar,
@@ -84,6 +97,8 @@ struct DockView: View {
         case .weather:
             WeatherWidget(
                 snapshot: snapshot.weather,
+                app: hostApp(for: .weather),
+                running: snapshot.runningBundleIDs.contains(WidgetKind.weather.bundleID),
                 pageCount: snapshot.weatherCount,
                 metrics: metrics,
                 palette: palette,
@@ -146,7 +161,7 @@ private struct AppTile: View {
     let action: () -> Void
 
     var body: some View {
-        AppIcon(app: app, metrics: metrics)
+        AppIcon(app: app, metrics: metrics, fillsTile: true)
             .frame(width: metrics.tileWidth, height: metrics.iconSize)
             .contentShape(Rectangle())
             .overlay {
@@ -169,6 +184,7 @@ private struct AppTile: View {
 private struct RunningTick: View {
     let metrics: Theme.Metrics
     let color: Color
+    var width: CGFloat? = nil
 
     var body: some View {
         UnevenRoundedRectangle(
@@ -179,7 +195,7 @@ private struct RunningTick: View {
             style: .circular
         )
         .fill(color)
-        .frame(width: (metrics.tileWidth / 2).rounded(), height: metrics.runningMarkHeight)
+        .frame(width: (width ?? metrics.tileWidth / 2).rounded(), height: metrics.runningMarkHeight)
         .offset(y: metrics.dockBottomPadding)
         .allowsHitTesting(false)
     }
@@ -188,6 +204,7 @@ private struct RunningTick: View {
 private struct RunningSpotlight: View {
     let metrics: Theme.Metrics
     let color: Color
+    var width: CGFloat? = nil
 
     var body: some View {
         let height = metrics.iconSize + metrics.dockBottomPadding
@@ -211,7 +228,7 @@ private struct RunningSpotlight: View {
                 )
             )
             .blur(radius: 8)
-            .frame(width: metrics.tileWidth, height: height)
+            .frame(width: width ?? metrics.tileWidth, height: height)
             .offset(y: metrics.dockBottomPadding)
             .allowsHitTesting(false)
     }
@@ -234,32 +251,43 @@ private struct SpotlightCone: Shape {
 private struct AppIcon: View {
     let app: PinnedApp
     let metrics: Theme.Metrics
+    var size: CGFloat?
+    var fillsTile: Bool = false
 
     var body: some View {
+        let side = size ?? metrics.iconSize
         Image(nsImage: AppLaunch.icon(for: app))
             .resizable()
             .interpolation(.high)
-            .frame(width: metrics.iconSize, height: metrics.iconSize)
+            .frame(width: side, height: side)
+            .scaleEffect(fillsTile ? metrics.iconOpticalScale : 1)
+            .frame(width: side, height: side)
+            .clipped()
     }
 }
 
 private struct CursorWidget: View {
     let snapshot: CursorSnapshot
     let agents: AgentSnapshot
+    let app: PinnedApp?
+    let running: Bool
     let metrics: Theme.Metrics
     let palette: Theme.Palette
     let action: () -> Void
 
     var body: some View {
-        WidgetTile(kind: .cursor, metrics: metrics, palette: palette, action: action) {
+        WidgetTile(
+            kind: .cursor,
+            app: app,
+            running: running,
+            metrics: metrics,
+            palette: palette,
+            action: action
+        ) {
             HStack(spacing: 8) {
-                HalftoneSymbol(
-                    systemName: agents.working.isEmpty
-                        ? "chevron.left.forwardslash.chevron.right"
-                        : "sparkle",
-                    size: metrics.widgetIcon,
-                    color: palette.widgetText
-                )
+                WidgetAppMark(app: app, systemName: agents.working.isEmpty
+                    ? "chevron.left.forwardslash.chevron.right"
+                    : "sparkle", metrics: metrics, palette: palette)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(snapshot.label)
                         .font(Typeface.sans(metrics.widgetTemp, weight: .light))
@@ -274,9 +302,6 @@ private struct CursorWidget: View {
                         .padding(.top, -3)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Circle()
-                    .fill(snapshot.running ? palette.widgetLive : palette.widgetMuted.opacity(0.45))
-                    .frame(width: 5, height: 5)
             }
         }
         .help(agents.help)
@@ -285,6 +310,8 @@ private struct CursorWidget: View {
 
 private struct CalendarWidget: View {
     let snapshot: CalendarSnapshot?
+    let app: PinnedApp?
+    let running: Bool
     let metrics: Theme.Metrics
     let palette: Theme.Palette
     let action: () -> Void
@@ -294,6 +321,8 @@ private struct CalendarWidget: View {
     var body: some View {
         WidgetTile(
             kind: .calendar,
+            app: app,
+            running: running,
             metrics: metrics,
             palette: palette,
             action: action,
@@ -302,17 +331,7 @@ private struct CalendarWidget: View {
             onNext: onNext
         ) {
             HStack(spacing: 8) {
-                ZStack {
-                    HalftoneSymbol(
-                        systemName: "calendar",
-                        size: metrics.widgetGlyph,
-                        color: palette.widgetText
-                    )
-                    Text(AppMarks.calendarDay())
-                        .font(Typeface.mono(max(8, metrics.widgetCaption), weight: .medium))
-                        .foregroundStyle(palette.widgetText)
-                        .offset(y: metrics.widgetGlyph * 0.12)
-                }
+                WidgetAppMark(app: app, systemName: "calendar", metrics: metrics, palette: palette)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(snapshot?.headline ?? "—")
                         .font(Typeface.sans(metrics.widgetTemp, weight: .light))
@@ -345,6 +364,8 @@ private struct CalendarWidget: View {
 
 private struct WeatherWidget: View {
     let snapshot: WeatherSnapshot?
+    let app: PinnedApp?
+    let running: Bool
     let pageCount: Int
     let metrics: Theme.Metrics
     let palette: Theme.Palette
@@ -355,6 +376,8 @@ private struct WeatherWidget: View {
     var body: some View {
         WidgetTile(
             kind: .weather,
+            app: app,
+            running: running,
             metrics: metrics,
             palette: palette,
             action: action,
@@ -363,10 +386,11 @@ private struct WeatherWidget: View {
             onNext: onNext
         ) {
             HStack(spacing: 8) {
-                HalftoneSymbol(
+                WidgetAppMark(
+                    app: app,
                     systemName: snapshot?.symbol ?? "cloud.fill",
-                    size: metrics.widgetGlyph,
-                    color: palette.widgetText
+                    metrics: metrics,
+                    palette: palette
                 )
                 VStack(alignment: .leading, spacing: 0) {
                     Text(snapshot?.label ?? "—")
@@ -395,8 +419,25 @@ private struct WeatherWidget: View {
     }
 }
 
+private struct WidgetAppMark: View {
+    let app: PinnedApp?
+    let systemName: String
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+
+    var body: some View {
+        if let app {
+            AppIcon(app: app, metrics: metrics, size: metrics.widgetGlyph)
+        } else {
+            HalftoneSymbol(systemName: systemName, size: metrics.widgetGlyph, color: palette.widgetText)
+        }
+    }
+}
+
 private struct WidgetTile<Content: View>: View {
     let kind: WidgetKind
+    var app: PinnedApp?
+    var running: Bool = false
     let metrics: Theme.Metrics
     let palette: Theme.Palette
     let action: () -> Void
@@ -408,14 +449,28 @@ private struct WidgetTile<Content: View>: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.widgetRadius, style: .continuous)
         content()
-            .padding(.leading, 10)
-            .padding(.trailing, pageCount > 1 ? 22 : 10)
-            .padding(.vertical, 4)
+            .padding(metrics.widgetInset)
+            .padding(.trailing, pageCount > 1 ? metrics.widgetCycleWidth : 0)
             .frame(maxWidth: .infinity)
             .frame(height: metrics.widgetInnerHeight)
             .background { WidgetBackground(palette: palette, shape: shape) }
             .overlay {
-                WidgetClickLayer(kind: kind, metrics: metrics, onOpen: action)
+                WidgetClickLayer(kind: kind, app: app, running: running, metrics: metrics, onOpen: action)
+            }
+            .overlay(alignment: .bottom) {
+                if running {
+                    let tickWidth = metrics.widgetSlotWidth - metrics.widgetInset * 2
+                    ZStack(alignment: .bottom) {
+                        RunningSpotlight(
+                            metrics: metrics,
+                            color: palette.runningDot,
+                            width: metrics.widgetSlotWidth
+                        )
+                        RunningTick(metrics: metrics, color: palette.runningDot, width: tickWidth)
+                    }
+                    .frame(width: metrics.widgetSlotWidth, height: 0, alignment: .bottom)
+                    .allowsHitTesting(false)
+                }
             }
             .overlay(alignment: .trailing) {
                 if pageCount > 1 {
@@ -424,7 +479,7 @@ private struct WidgetTile<Content: View>: View {
                         onPrevious: onPrevious,
                         onNext: onNext
                     )
-                    .padding(.trailing, 4)
+                    .padding(.trailing, metrics.widgetInset)
                 }
             }
     }
