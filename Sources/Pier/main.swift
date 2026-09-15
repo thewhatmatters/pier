@@ -10,12 +10,20 @@ if CommandLine.arguments.contains("--selftest") {
 if CommandLine.arguments.contains("--status") {
     let cursor = CursorStatus.snapshot()
     let agents = AgentActivity.snapshot()
-    print("Cursor: \(cursor.running ? "running" : "off")  \(cursor.label)")
+    print("Cursor: \(cursor.running ? "running" : "off")  \(cursor.label)\(cursor.windowTitle.map { "  (\($0))" } ?? "")")
     print("Agents: \(agents.caption)  \(agents.working.count) working / \(agents.sessions.count) recent")
     for session in agents.sessions.prefix(8) {
         let age = Int(Date().timeIntervalSince(session.updatedAt))
         let kind = session.kind == .cloud ? "cloud" : "local"
         print("  - \(session.name)  \(session.project)  \(kind)  \(session.isWorking ? "working" : "quiet")  \(age)s ago")
+    }
+    let grok = GrokBot.snapshot()
+    print("Grok Bot: \(grok.signedIn ? "signed in" : "signed out")  \(grok.working.count) working / \(grok.visible.count) seats")
+    for seat in grok.visible.prefix(8) {
+        let age = seat.lastActivityAt.map { Int(Date().timeIntervalSince($0)) }
+        let state = seat.isWorking ? "working" : (seat.needsAttention ? "needs you" : "quiet")
+        let ageLabel = age.map { "\($0)s ago" } ?? "unknown"
+        print("  - \(seat.name)  \(state)  \(ageLabel)")
     }
     print("Pinned apps: \(Settings.shared.pinnedApps.map(\.name).joined(separator: ", "))")
     let badges = DockBadge.labels(for: Set(Settings.shared.pinnedApps.map(\.bundleID)))
@@ -73,7 +81,26 @@ if let index = CommandLine.arguments.firstIndex(of: "--render"),
                 ],
                 now: Date()
             ),
-            weather: WeatherSnapshot(temperature: 72, high: 81, low: 65, condition: "Clear", symbol: "sun.max.fill", city: "Austin", source: "Apple Weather")
+            weather: WeatherSnapshot(temperature: 72, high: 81, low: 65, condition: "Clear", symbol: "sun.max.fill", city: "Austin", source: "Apple Weather"),
+            grokBot: GrokBotSnapshot(
+                seats: [
+                    GrokBotSeat(
+                        id: "1",
+                        name: "Design Engineer",
+                        title: "",
+                        shape: .hex,
+                        tint: .named("black"),
+                        isWorking: true,
+                        needsAttention: false,
+                        unreadCount: 0,
+                        isHidden: false,
+                        isGroup: false,
+                        lastActivityAt: Date()
+                    )
+                ],
+                selectedIndex: 0,
+                signedIn: true
+            )
         )
         let renderer = ImageRenderer(content: DockView(snapshot: snapshot).padding(24))
         renderer.scale = 2

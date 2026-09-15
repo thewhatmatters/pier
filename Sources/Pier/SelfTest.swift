@@ -36,6 +36,28 @@ enum SelfTest {
 
         check("window title project", CursorStatus.projectName(fromWindowTitle: "DockView.swift — dock") == "dock")
         check("plain window title", CursorStatus.projectName(fromWindowTitle: "dock") == "dock")
+        check(
+            "dirty window title project",
+            CursorStatus.projectName(fromWindowTitle: "● DockView.swift — pier-app") == "pier-app"
+        )
+        check(
+            "cursor suffix is stripped",
+            CursorStatus.projectName(fromWindowTitle: "DockView.swift — pier-app — Cursor") == "pier-app"
+        )
+        check("generic cursor title is empty", CursorStatus.projectName(fromWindowTitle: "Cursor") == nil)
+        let workspaceRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pier-ws-\(UUID().uuidString)", isDirectory: true)
+        let workspaceFolder = workspaceRoot.appendingPathComponent("hash", isDirectory: true)
+        try? FileManager.default.createDirectory(at: workspaceFolder, withIntermediateDirectories: true)
+        try? """
+        {"folder":"file:///Users/me/Development/pier-app"}
+        """.write(
+            to: workspaceFolder.appendingPathComponent("workspace.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        check("workspace folder name", CursorStatus.lastWorkspaceName(in: workspaceRoot) == "pier-app")
+        try? FileManager.default.removeItem(at: workspaceRoot)
 
         let now = Date()
         let root = FileManager.default.temporaryDirectory
@@ -53,7 +75,16 @@ enum SelfTest {
 
         let working = AgentActivity.scan(now: now, projectsRoot: root, workingWindow: 120)
         check("working session detected", working.count == 1 && working[0].isWorking && working[0].project == "dock")
+        check("cursor live when an agent works", !working.isEmpty)
         check("working session has a title", working[0].title == "Build the dock overlay")
+        check(
+            "live turn is working",
+            AgentActivity.isLive(lastEvent: ["role": "assistant"], written: now, now: now)
+        )
+        check(
+            "ended turn is quiet",
+            AgentActivity.isLive(lastEvent: ["type": "turn_ended", "status": "success"], written: now, now: now) == false
+        )
         check("cloud ids are marked cloud", AgentActivity.kind(fromID: "bc-abc123") == .cloud)
         check("uuid ids are local", AgentActivity.kind(fromID: "aaaa") == .local)
         check(
@@ -142,18 +173,25 @@ enum SelfTest {
         check("corner radius is 16", Theme.cornerRadius == 16)
         check("widget type is at least 12pt", Theme.metrics(tileSize: 24).widgetFont >= 12)
         check("widget islands are squarish", Theme.widgetRadius == 14)
+        let redMark = NSImage(size: NSSize(width: 32, height: 32))
+        redMark.lockFocus()
+        NSColor.systemRed.setFill()
+        NSRect(x: 0, y: 0, width: 32, height: 32).fill()
+        redMark.unlockFocus()
+        let redTones = WidgetGlass.tones(from: redMark)
+        check("widget glass samples icon color", redTones.contains { $0.hue < 0.08 || $0.hue > 0.92 })
         check("dark and light palettes exist", Theme.Appearance.allCases.count == 2)
         check("halftone renders a symbol", Halftone.image(systemName: "cloud.fill", pointSize: 24).size.width > 0)
         check("calendar day is numeric", Int(AppMarks.calendarDay()) != nil)
-        check("widget order fills missing", WidgetKind.normalized([.weather]) == [.weather, .cursor, .calendar])
-        check("widget order drops dupes", WidgetKind.normalized([.cursor, .cursor, .weather]) == [.cursor, .weather, .calendar])
+        check("widget order fills missing", WidgetKind.normalized([.weather]) == [.weather, .cursor, .grokBot, .calendar])
+        check("widget order drops dupes", WidgetKind.normalized([.cursor, .cursor, .weather]) == [.cursor, .weather, .grokBot, .calendar])
         let safari = PinnedApp(bundleID: "com.apple.Safari", name: "Safari", path: "/Applications/Safari.app")
         let mail = PinnedApp(bundleID: "com.apple.mail", name: "Mail", path: "/System/Applications/Mail.app")
         let mixed: [StripItem] = [.app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather)]
         check(
             "strip keeps interleave and fills widgets",
             StripItem.normalized(mixed, apps: [safari, mail]) == [
-                .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.calendar)
+                .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.grokBot), .widget(.calendar)
             ]
         )
         let cursor = PinnedApp(bundleID: NativeDock.cursorBundleID, name: "Cursor", path: "/Applications/Cursor.app")
@@ -162,9 +200,10 @@ enum SelfTest {
             StripItem.normalized(
                 [.app(cursor.bundleID), .widget(.cursor), .app(safari.bundleID)],
                 apps: [cursor, safari]
-            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.calendar), .widget(.weather)]
+            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.grokBot), .widget(.calendar), .widget(.weather)]
         )
         check("cursor widget hosts Cursor", WidgetKind.cursor.bundleID == NativeDock.cursorBundleID)
+        check("grok bot widget hosts Grok Bot", WidgetKind.grokBot.bundleID == NativeDock.grokBotBundleID)
         check("calendar widget hosts Calendar", WidgetKind.calendar.bundleID == AppMarks.calendarBundleID)
         check("weather widget hosts Weather", WidgetKind.weather.bundleID == "com.apple.weather")
         check(
@@ -178,7 +217,7 @@ enum SelfTest {
                 [.widget(.calendar), .app(safari.bundleID)],
                 apps: [calendarApp, safari],
                 iconOnly: [.calendar]
-            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.weather)]
+            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.grokBot), .widget(.weather)]
         )
         let calendarController = AppMenuController(app: calendarApp)
         let calendarMenu = AppIconMenu.make(app: calendarApp, running: false, controller: calendarController)
@@ -257,6 +296,44 @@ enum SelfTest {
         check("cycled event is the next one", current.selecting(1).headline == "Design review")
         let range = Agenda.dayRange(containing: noon, calendar: calendar)
         check("day range is 24 hours", range.end.timeIntervalSince(range.start) == 86_400)
+        let grokNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let grokRoster = """
+        {"schemaVersion":4,"value":{"rows":[
+          {"id":"a","name":"Design Engineer","title":"","avatarShape":"hex","avatarColor":"black","isHiddenFromSidebar":false,"isGroup":false,"lastActivityAt":1800000000000,"unreadCount":0,"hasUnread":false,"awaitingUserResponse":null,"lastEntry":{"kind":"text","sessionPreview":{"kind":"widget_options","prompt":"Pick one"}}},
+          {"id":"b","name":"Chief of Staff","title":"Admin","avatarShape":"cloud","avatarColor":"violet","isHiddenFromSidebar":false,"isGroup":false,"lastActivityAt":1799999800000,"awaitingUserResponse":{"kind":"choice"},"unreadCount":0},
+          {"id":"c","name":"Hidden","title":"","avatarShape":"circle","avatarColor":"red","isHiddenFromSidebar":true,"isGroup":false,"lastActivityAt":1800000000000},
+          {"id":"d","name":"Social Manager","title":"","avatarShape":"","avatarColor":"","isRunning":true,"isHiddenFromSidebar":false,"isGroup":false,"lastActivityAt":1000}
+        ]}}
+        """.data(using: .utf8)!
+        let grokSeats = GrokBot.parseRoster(grokRoster, now: grokNow, workingWindow: 120)
+        check("grok roster keeps listed seats", grokSeats.filter(\.isListed).map(\.name) == ["Design Engineer", "Chief of Staff", "Social Manager"])
+        check("grok recent activity is working", grokSeats.first { $0.id == "a" }?.isWorking == true)
+        check("grok stale seat is quiet", grokSeats.first { $0.id == "b" }?.isWorking == false)
+        check("grok read choice is quiet", grokSeats.first { $0.id == "a" }?.needsAttention == false)
+        check("grok awaiting needs you", grokSeats.first { $0.id == "b" }?.needsAttention == true)
+        check("grok running flag wins", grokSeats.first { $0.id == "d" }?.isWorking == true)
+        check("grok hex face", GrokBot.faceShape(from: "hex") == .hex)
+        check("grok cloud face", GrokBot.faceShape(from: "cloud") == .cloud)
+        check("grok named tint", GrokBot.faceTint(from: "violet", name: "Chief") == .named("violet"))
+        check(
+            "grok fallback tint is stable",
+            GrokBot.fallbackTintIndex(for: "Social Manager", modulo: 9)
+                == GrokBot.fallbackTintIndex(for: "Social Manager", modulo: 9)
+        )
+        check("grok cycle wraps", GrokBot.cycleIndex(2, count: 3, by: 1) == 0)
+        let grokSnap = GrokBotSnapshot(seats: grokSeats, selectedIndex: 0, signedIn: true)
+        check("grok caption working", grokSnap.selected?.caption == "Working")
+        check("grok caption needs you", grokSnap.selecting(1).selected?.caption == "Needs you")
+        check(
+            "grok prefers a bot that needs you",
+            GrokBot.preferredIndex(in: grokSnap.visible, lastID: "a") == 1
+        )
+        check("grok attention belongs to the widget", grokSnap.needsAttention && grokSnap.selected?.needsAttention == false)
+        check(
+            "widget and grok icon share a layout id",
+            StripItem.widget(.grokBot).layoutID == StripItem.app(NativeDock.grokBotBundleID).layoutID
+        )
+
         check("badge hides empty", DockBadge.mark(from: "") == nil && DockBadge.mark(from: "0") == nil)
         check("badge shows a count", DockBadge.mark(from: "1") == .count("1"))
         check("badge caps at 99+", DockBadge.mark(from: "375") == .count("99+"))

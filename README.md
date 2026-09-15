@@ -48,9 +48,9 @@ switches to a light bar.
 | Tile | Source |
 | --- | --- |
 | Apps | Seeded from your current macOS Dock pins; click to launch or activate. Right-click for Open, Hide, Quit (Option for Force Quit), Show in Finder, and Remove from Pier |
-| Cursor | Running / frontmost, plus the active window's project name. Subtitle lists working agents by the first prompt in their transcript under `~/.cursor/projects/*/agent-transcripts` (rescanned every ~8s, not from Activity Monitor). Cloud sessions (`bc-` ids) are included when they write locally |
+| Cursor | Running / frontmost, plus the active window's project name. Subtitle lists working agents by the first prompt in their transcript under `~/.cursor/projects/*/agent-transcripts` (rescanned every ~8s). A session is live until Cursor writes `turn_ended`, not for two minutes after. Cloud sessions (`bc-` ids) are included when they write locally |
 | Calendar | Today's events from EventKit. Shows the meeting in progress or the next one, plus how many more. Click opens Calendar.app |
-| Weather | Prefers Apple Weather via WeatherKit (500k calls/month included with the Developer Program). Location from Core Location, IP if that is denied. Falls back to Open-Meteo until App ID `so.whatmatters.pier` has the WeatherKit capability enabled. Click opens Weather.app |
+| Weather | Refreshes every 15 minutes. Prefers Apple Weather via WeatherKit (500k calls/month included with the Developer Program). Location from Core Location, IP if that is denied. Falls back to Open-Meteo until App ID `so.whatmatters.pier` has the WeatherKit capability enabled — that fallback can sit a few degrees off Weather.app. Click opens Weather.app |
 
 Cloud agents that never write a local transcript still will not appear.
 

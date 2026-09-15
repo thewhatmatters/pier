@@ -19,6 +19,12 @@ enum AppLaunch {
         }
     }
 
+    static func openGrokBot() {
+        if let grok = NativeDock.application(bundleID: NativeDock.grokBotBundleID, fallbackName: "Grok Bot") {
+            open(grok)
+        }
+    }
+
     static func openCalendar() {
         if let calendar = NativeDock.application(bundleID: AppMarks.calendarBundleID, fallbackName: "Calendar") {
             open(calendar)

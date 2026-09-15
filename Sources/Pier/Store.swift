@@ -20,6 +20,16 @@ final class Store: ObservableObject {
     private var calendarIndex = 0
     private var weatherPages: [WeatherSnapshot] = []
     private var weatherIndex = 0
+    private var grokBot = GrokBotSnapshot(seats: [], selectedIndex: 0, signedIn: false)
+    private var grokBotIndex = 0
+    private var grokAttentionIDs: Set<String> = []
+
+    private enum Pulse {
+        static let dock: TimeInterval = 3
+        static let weather: TimeInterval = 15 * 60
+        static let agents: TimeInterval = 8
+        static let calendar: TimeInterval = 120
+    }
 
     private init() {}
 
@@ -33,7 +43,7 @@ final class Store: ObservableObject {
             name: .EKEventStoreChanged,
             object: nil
         )
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: Pulse.dock, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
         NotificationCenter.default.addObserver(
@@ -74,13 +84,14 @@ final class Store: ObservableObject {
     }
 
     func refresh() {
-        if Date().timeIntervalSince(lastWeatherFetch) > 600 {
+        if Date().timeIntervalSince(lastWeatherFetch) > Pulse.weather {
             weatherTask = Task { await refreshWeather() }
         }
-        if Date().timeIntervalSince(lastAgentScan) > 8 {
+        if Date().timeIntervalSince(lastAgentScan) > Pulse.agents {
             scanAgents()
         }
-        if Date().timeIntervalSince(lastCalendarFetch) > 120 {
+        refreshGrokBot()
+        if Date().timeIntervalSince(lastCalendarFetch) > Pulse.calendar {
             calendarTask = Task { await refreshCalendar() }
         }
         publish()
@@ -103,6 +114,24 @@ final class Store: ObservableObject {
         publish()
     }
 
+    private func refreshGrokBot() {
+        let next = GrokBot.snapshot()
+        let visible = next.visible
+        let needingIDs = Set(visible.filter(\.needsAttention).map(\.id))
+        let keep = grokBot.selected.flatMap { current in
+            visible.firstIndex(where: { $0.id == current.id })
+        }
+        if needingIDs != grokAttentionIDs, let firstNeed = visible.firstIndex(where: \.needsAttention) {
+            grokBot = next.selecting(firstNeed)
+        } else if let keep {
+            grokBot = next.selecting(keep)
+        } else {
+            grokBot = next.selecting(next.selectedIndex)
+        }
+        grokBotIndex = grokBot.selectedIndex
+        grokAttentionIDs = needingIDs
+    }
+
     func cycleCalendar(_ delta: Int) {
         let count = calendar?.events.count ?? 0
         guard count > 1 else { return }
@@ -114,6 +143,14 @@ final class Store: ObservableObject {
     func cycleWeather(_ delta: Int) {
         guard weatherPages.count > 1 else { return }
         weatherIndex = Agenda.cycleIndex(weatherIndex, count: weatherPages.count, by: delta)
+        publish()
+    }
+
+    func cycleGrokBot(_ delta: Int) {
+        let count = grokBot.visible.count
+        guard count > 1 else { return }
+        grokBotIndex = GrokBot.cycleIndex(grokBotIndex, count: count, by: delta)
+        grokBot = grokBot.selecting(grokBotIndex)
         publish()
     }
 
@@ -156,7 +193,8 @@ final class Store: ObservableObject {
             agents: agents,
             calendar: calendar,
             weather: weather,
-            weatherCount: weatherPages.count
+            weatherCount: weatherPages.count,
+            grokBot: grokBot
         )
         if next != snapshot {
             snapshot = next

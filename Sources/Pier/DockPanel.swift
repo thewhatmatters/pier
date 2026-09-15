@@ -212,6 +212,7 @@ struct DockRoot: View {
             appearance: settings.appearance,
             onLaunch: AppLaunch.open,
             onOpenCursor: AppLaunch.openCursor,
+            onOpenGrokBot: AppLaunch.openGrokBot,
             onOpenCalendar: AppLaunch.handleCalendarTile,
             onOpenWeather: AppLaunch.openWeather,
             stripOrder: settings.stripOrder

@@ -8,6 +8,7 @@ struct DockView: View {
     var appearance: Theme.Appearance = .dark
     var onLaunch: (PinnedApp) -> Void = { _ in }
     var onOpenCursor: () -> Void = {}
+    var onOpenGrokBot: () -> Void = {}
     var onOpenCalendar: () -> Void = {}
     var onOpenWeather: () -> Void = {}
     var stripOrder: [StripItem] = []
@@ -87,6 +88,17 @@ struct DockView: View {
                 palette: palette,
                 action: onOpenCursor
             )
+        case .grokBot:
+            GrokBotWidget(
+                snapshot: snapshot.grokBot,
+                app: hostApp(for: .grokBot),
+                running: snapshot.runningBundleIDs.contains(WidgetKind.grokBot.bundleID),
+                metrics: metrics,
+                palette: palette,
+                action: onOpenGrokBot,
+                onPrevious: { Store.shared.cycleGrokBot(-1) },
+                onNext: { Store.shared.cycleGrokBot(1) }
+            )
         case .calendar:
             CalendarWidget(
                 snapshot: snapshot.calendar,
@@ -138,6 +150,7 @@ private struct DockBackground: View {
 }
 
 private struct WidgetBackground: View {
+    var app: PinnedApp?
     let palette: Theme.Palette
     let shape: RoundedRectangle
 
@@ -145,15 +158,68 @@ private struct WidgetBackground: View {
         shape
             .fill(palette.widgetFill)
             .overlay {
-                if #available(macOS 26.0, *) {
-                    shape
-                        .fill(.clear)
-                        .glassEffect(.regular.tint(palette.widgetGlassTint), in: shape)
-                } else {
-                    shape.fill(.ultraThinMaterial.opacity(0.7))
+                if let app {
+                    WidgetIconWash(app: app)
+                        .clipShape(shape)
+                }
+            }
+            .overlay {
+                if app == nil {
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(.clear)
+                            .glassEffect(.regular.tint(palette.widgetGlassTint), in: shape)
+                    } else {
+                        shape.fill(.ultraThinMaterial.opacity(0.7))
+                    }
                 }
             }
             .overlay { shape.stroke(palette.widgetStroke, lineWidth: 0.8) }
+    }
+}
+
+private struct WidgetIconWash: View {
+    let app: PinnedApp
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let swatch = WidgetGlass.swatch(for: app)
+        let dark = colorScheme == .dark
+        GeometryReader { geo in
+            let reach = max(geo.size.width, geo.size.height)
+            ZStack {
+                (dark ? Color.black : Color(hex: 0xE8E8ED))
+                RadialGradient(
+                    colors: [swatch.core.opacity(dark ? 0.88 : 0.55), swatch.core.opacity(0.2), .clear],
+                    center: UnitPoint(x: 0.58, y: 0.42),
+                    startRadius: 2,
+                    endRadius: reach * 0.92
+                )
+                RadialGradient(
+                    colors: [swatch.halo.opacity(dark ? 0.55 : 0.32), .clear],
+                    center: UnitPoint(x: 0.08, y: 0.85),
+                    startRadius: 0,
+                    endRadius: reach * 0.7
+                )
+                RadialGradient(
+                    colors: [swatch.halo.opacity(dark ? 0.4 : 0.22), .clear],
+                    center: UnitPoint(x: 0.95, y: 0.12),
+                    startRadius: 0,
+                    endRadius: reach * 0.55
+                )
+                LinearGradient(
+                    colors: [
+                        (dark ? Color.black : Color.white).opacity(dark ? 0.62 : 0.7),
+                        (dark ? Color.black : Color.white).opacity(0.18),
+                        .clear
+                    ],
+                    startPoint: .leading,
+                    endPoint: UnitPoint(x: 0.62, y: 0.5)
+                )
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -324,7 +390,8 @@ private struct CursorWidget: View {
             running: running,
             metrics: metrics,
             palette: palette,
-            action: action
+            action: action,
+            attention: !agents.working.isEmpty
         ) {
             HStack(spacing: 8) {
                 WidgetAppMark(app: app, systemName: agents.working.isEmpty
@@ -346,7 +413,252 @@ private struct CursorWidget: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .help(agents.help)
+        .help(cursorHelp)
+    }
+
+    private var cursorHelp: String {
+        var lines: [String] = []
+        if snapshot.running, let project = snapshot.project {
+            lines.append("In \(project)")
+        } else if snapshot.running {
+            lines.append("Cursor is running")
+        } else {
+            lines.append("Cursor is off")
+        }
+        lines.append(agents.help)
+        return lines.joined(separator: "\n")
+    }
+}
+
+private struct GrokBotWidget: View {
+    let snapshot: GrokBotSnapshot?
+    let app: PinnedApp?
+    let running: Bool
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+    var onPrevious: () -> Void = {}
+    var onNext: () -> Void = {}
+
+    var body: some View {
+        WidgetTile(
+            kind: .grokBot,
+            app: app,
+            running: running,
+            metrics: metrics,
+            palette: palette,
+            action: action,
+            pageCount: snapshot?.pageCount ?? 0,
+            attention: snapshot?.needsAttention == true,
+            onPrevious: onPrevious,
+            onNext: onNext
+        ) {
+            HStack(spacing: 8) {
+                if let seat = snapshot?.selected {
+                    GrokBotAvatar(seat: seat, size: metrics.widgetGlyph)
+                } else {
+                    WidgetAppMark(app: app, systemName: "face.smiling", metrics: metrics, palette: palette)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(snapshot?.selected?.headline ?? "Grok Bot")
+                        .font(Typeface.sans(metrics.widgetTemp, weight: .light))
+                        .foregroundStyle(palette.widgetText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text(subtitle)
+                        .font(Typeface.sans(metrics.widgetCaption))
+                        .foregroundStyle(subtitleColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.top, -3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .help(cycleHelp)
+    }
+
+    private var subtitle: String {
+        snapshot?.selected?.caption
+            ?? (snapshot?.signedIn == true ? "Quiet" : "Sign in")
+    }
+
+    private var subtitleColor: Color {
+        if snapshot?.selected?.isWorking == true || snapshot?.selected?.needsAttention == true {
+            return palette.widgetLive
+        }
+        return palette.widgetMuted
+    }
+
+    private var cycleHelp: String {
+        let base = snapshot?.help ?? "Open Grok Bot and sign in"
+        if snapshot?.canCycle == true {
+            return base + "\nClick the arrows to cycle Grok Bots."
+        }
+        return base
+    }
+}
+
+private struct GrokBotAvatar: View {
+    let seat: GrokBotSeat
+    let size: CGFloat
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: seat.isWorking ? 1 / 24 : 1 / 8, paused: false)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            GrokBotFaceView(seat: seat, size: size, time: t)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct GrokBotFaceView: View {
+    let seat: GrokBotSeat
+    let size: CGFloat
+    let time: TimeInterval
+
+    var body: some View {
+        let bounce = seat.isWorking ? sin(time * 9) * size * 0.06 : 0
+        let sway = seat.needsAttention && !seat.isWorking ? sin(time * 2.2) * size * 0.04 : 0
+        let pulse = seat.isWorking ? 1 + sin(time * 6) * 0.05 : 1
+        ZStack {
+            GrokBotBody(shape: seat.shape)
+                .fill(seat.tint.color)
+            GrokBotEyes(time: time, working: seat.isWorking, size: size)
+        }
+        .frame(width: size, height: size)
+        .scaleEffect(pulse)
+        .offset(x: sway, y: bounce)
+    }
+}
+
+private struct GrokBotBody: Shape {
+    let shape: GrokBotFace.Shape
+
+    func path(in rect: CGRect) -> Path {
+        let inset = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.06)
+        switch shape {
+        case .circle:
+            return Path(ellipseIn: inset)
+        case .oval:
+            return Path(ellipseIn: inset.insetBy(dx: inset.width * 0.08, dy: 0))
+        case .pill:
+            return Path(roundedRect: inset.insetBy(dx: 0, dy: inset.height * 0.18), cornerRadius: inset.height)
+        case .pebble:
+            return Path(roundedRect: inset, cornerRadius: inset.width * 0.38)
+        case .square:
+            return Path(roundedRect: inset, cornerRadius: inset.width * 0.22)
+        case .hex:
+            return polygon(in: inset, sides: 6)
+        case .triangle:
+            return triangle(in: inset)
+        case .teardrop:
+            return teardrop(in: inset)
+        case .cloud:
+            return cloud(in: inset)
+        }
+    }
+
+    private func polygon(in rect: CGRect, sides: Int) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        var path = Path()
+        for i in 0..<sides {
+            let angle = (Double(i) / Double(sides)) * .pi * 2 - .pi / 2
+            let point = CGPoint(
+                x: center.x + CGFloat(cos(angle)) * radius,
+                y: center.y + CGFloat(sin(angle)) * radius
+            )
+            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.closeSubpath()
+        return path
+    }
+
+    private func triangle(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+
+    private func teardrop(in rect: CGRect) -> Path {
+        let circle = CGRect(
+            x: rect.minX,
+            y: rect.midY - rect.width * 0.28,
+            width: rect.width,
+            height: rect.width * 0.72
+        )
+        var path = Path(ellipseIn: circle)
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.04))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.12, y: rect.midY))
+        path.closeSubpath()
+        return path
+    }
+
+    private func cloud(in rect: CGRect) -> Path {
+        let left = CGRect(x: rect.minX, y: rect.midY - rect.height * 0.18, width: rect.width * 0.48, height: rect.height * 0.48)
+        let right = CGRect(x: rect.maxX - rect.width * 0.5, y: rect.midY - rect.height * 0.14, width: rect.width * 0.5, height: rect.height * 0.46)
+        let top = CGRect(x: rect.midX - rect.width * 0.28, y: rect.minY + rect.height * 0.08, width: rect.width * 0.52, height: rect.height * 0.5)
+        var path = Path(ellipseIn: left)
+        path.addEllipse(in: right)
+        path.addEllipse(in: top)
+        return path
+    }
+}
+
+private struct GrokBotEyes: View {
+    let time: TimeInterval
+    let working: Bool
+    let size: CGFloat
+
+    var body: some View {
+        let blink = eyeScale(time)
+        let gaze = working ? sin(time * 4.2) * size * 0.04 : sin(time * 0.7) * size * 0.02
+        HStack(spacing: size * 0.16) {
+            Capsule()
+                .fill(Color.white)
+                .frame(width: size * 0.11, height: size * 0.28 * blink)
+                .rotationEffect(.degrees(-18))
+            Capsule()
+                .fill(Color.white)
+                .frame(width: size * 0.11, height: size * 0.28 * blink)
+                .rotationEffect(.degrees(-18))
+        }
+        .offset(x: gaze, y: working ? size * 0.02 : size * 0.04)
+    }
+
+    private func eyeScale(_ time: TimeInterval) -> CGFloat {
+        let cycle = time.truncatingRemainder(dividingBy: working ? 1.6 : 3.4)
+        if cycle > 0.12 { return 1 }
+        return max(0.12, CGFloat(sin(cycle / 0.12 * .pi)))
+    }
+}
+
+private extension GrokBotFace.Tint {
+    var color: Color {
+        let key: String
+        switch self {
+        case .named(let name): key = name
+        case .fallback(let index):
+            key = GrokBotFace.Tint.names[index % GrokBotFace.Tint.names.count]
+        }
+        switch key {
+        case "black": return Color(hex: 0x1A1A1A)
+        case "violet": return Color(hex: 0x7C5CFF)
+        case "red": return Color(hex: 0xE23B3B)
+        case "orange": return Color(hex: 0xF27A2C)
+        case "yellow": return Color(hex: 0xF2C14E)
+        case "green": return Color(hex: 0x3CB86A)
+        case "blue": return Color(hex: 0x3D7EFF)
+        case "pink": return Color(hex: 0xF07AB8)
+        case "white": return Color(hex: 0xE8E8E8)
+        default: return Color(hex: 0x6E6E73)
+        }
     }
 }
 
@@ -502,6 +814,7 @@ private struct WidgetTile<Content: View>: View {
     let palette: Theme.Palette
     let action: () -> Void
     var pageCount: Int = 1
+    var attention: Bool = false
     var onPrevious: () -> Void = {}
     var onNext: () -> Void = {}
     @ViewBuilder let content: () -> Content
@@ -513,7 +826,7 @@ private struct WidgetTile<Content: View>: View {
             .padding(.trailing, pageCount > 1 ? metrics.widgetCycleWidth : 0)
             .frame(maxWidth: .infinity)
             .frame(height: metrics.widgetInnerHeight)
-            .background { WidgetBackground(palette: palette, shape: shape) }
+            .background { WidgetBackground(app: app, palette: palette, shape: shape) }
             .overlay {
                 WidgetClickLayer(kind: kind, app: app, running: running, metrics: metrics, onOpen: action)
             }
@@ -532,6 +845,11 @@ private struct WidgetTile<Content: View>: View {
                     .allowsHitTesting(false)
                 }
             }
+            .overlay {
+                if attention {
+                    WidgetAttentionBorder(shape: shape, palette: palette)
+                }
+            }
             .overlay(alignment: .trailing) {
                 if pageCount > 1 {
                     WidgetCycleControl(
@@ -543,6 +861,33 @@ private struct WidgetTile<Content: View>: View {
                     .padding(.trailing, metrics.widgetInset)
                 }
             }
+    }
+}
+
+private struct WidgetAttentionBorder: View {
+    let shape: RoundedRectangle
+    let palette: Theme.Palette
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 24, paused: false)) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: 2.6) / 2.6
+            shape.stroke(
+                AngularGradient(
+                    colors: [
+                        palette.widgetLive,
+                        Color.white.opacity(0.92),
+                        palette.widgetLive.opacity(0.2),
+                        Color(hex: 0x5CE1FF).opacity(0.9),
+                        palette.widgetLive
+                    ],
+                    center: .center,
+                    angle: .degrees(turn * 360)
+                ),
+                lineWidth: 1.6
+            )
+        }
+        .allowsHitTesting(false)
     }
 }
 

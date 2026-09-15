@@ -3,6 +3,7 @@ import SwiftUI
 
 enum WidgetKind: String, Codable, CaseIterable, Identifiable {
     case cursor
+    case grokBot
     case calendar
     case weather
 
@@ -11,6 +12,7 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
     var bundleID: String {
         switch self {
         case .cursor: return NativeDock.cursorBundleID
+        case .grokBot: return NativeDock.grokBotBundleID
         case .calendar: return AppMarks.calendarBundleID
         case .weather: return "com.apple.weather"
         }
@@ -19,12 +21,13 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
     var fallbackName: String {
         switch self {
         case .cursor: return "Cursor"
+        case .grokBot: return "Grok Bot"
         case .calendar: return "Calendar"
         case .weather: return "Weather"
         }
     }
 
-    static let standard: [WidgetKind] = [.cursor, .calendar, .weather]
+    static let standard: [WidgetKind] = [.cursor, .grokBot, .calendar, .weather]
 
     static func hosting(bundleID: String) -> WidgetKind? {
         standard.first { $0.bundleID == bundleID }
@@ -100,7 +103,7 @@ enum StripItem: Equatable, Identifiable, Codable {
         return foldingAppsCoveredByWidgets(result, iconOnly: iconOnly)
     }
 
-    /// An expanded Cursor/Calendar/Weather pin is the widget, not a second icon.
+    /// An expanded host pin is the widget, not a second icon.
     static func foldingAppsCoveredByWidgets(
         _ items: [StripItem],
         iconOnly: Set<WidgetKind> = []

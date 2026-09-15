@@ -16,7 +16,7 @@ struct CursorSnapshot: Equatable {
 
     var project: String? {
         guard let windowTitle, !windowTitle.isEmpty else { return nil }
-        return CursorStatus.projectName(fromWindowTitle: windowTitle)
+        return CursorStatus.projectName(fromWindowTitle: windowTitle) ?? windowTitle
     }
 
     var label: String {
@@ -90,6 +90,7 @@ struct DockSnapshot: Equatable {
     var calendar: CalendarSnapshot?
     var weather: WeatherSnapshot?
     var weatherCount: Int = 1
+    var grokBot: GrokBotSnapshot?
 
     static let empty = DockSnapshot(
         apps: [],
@@ -98,6 +99,7 @@ struct DockSnapshot: Equatable {
         cursor: CursorSnapshot(running: false, frontmost: false, windowTitle: nil),
         agents: AgentSnapshot(sessions: []),
         calendar: nil,
-        weather: nil
+        weather: nil,
+        grokBot: nil
     )
 }

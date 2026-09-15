@@ -1,10 +1,10 @@
 import Foundation
 
 /// Cursor agent sessions, inferred from transcript files.
-/// A session is "working" when its parent transcript or any subagent
-/// transcript was written inside `workingWindow`. Cloud agents show up
-/// when they write locally (`bc-` ids); ones that never touch disk will
-/// not appear here.
+/// A session is "working" when a transcript was written inside
+/// `workingWindow` and the last event is not `turn_ended` — the same
+/// idle point Cursor uses. Cloud agents show up when they write locally
+/// (`bc-` ids); ones that never touch disk will not appear here.
 enum AgentActivity {
     static let workingWindow: TimeInterval = 120
     static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -45,13 +45,18 @@ enum AgentActivity {
             for group in groups where group.hasDirectoryPath {
                 guard let latest = latestWrite(in: group, fm: fm) else { continue }
                 let id = group.lastPathComponent
-                let working = now.timeIntervalSince(latest) <= workingWindow
+                let working = isLive(
+                    lastEvent: lastEvent(in: latest.url),
+                    written: latest.date,
+                    now: now,
+                    workingWindow: workingWindow
+                )
                 sessions.append(AgentSession(
                     id: id,
                     project: project,
-                    title: working ? title(for: group, fallback: project, written: latest) : project,
+                    title: working ? title(for: group, fallback: project, written: latest.date) : project,
                     kind: kind(fromID: id),
-                    updatedAt: latest,
+                    updatedAt: latest.date,
                     isWorking: working
                 ))
             }
@@ -71,6 +76,17 @@ enum AgentActivity {
 
     static func kind(fromID id: String) -> AgentKind {
         id.hasPrefix("bc-") ? .cloud : .local
+    }
+
+    static func isLive(
+        lastEvent: [String: Any]?,
+        written: Date,
+        now: Date = Date(),
+        workingWindow: TimeInterval = workingWindow
+    ) -> Bool {
+        guard now.timeIntervalSince(written) <= workingWindow else { return false }
+        if lastEvent?["type"] as? String == "turn_ended" { return false }
+        return true
     }
 
     static func title(fromTranscriptPrefix text: String) -> String? {
@@ -132,7 +148,28 @@ enum AgentActivity {
         return title(fromTranscriptPrefix: text)
     }
 
-    private static func latestWrite(in directory: URL, fm: FileManager) -> Date? {
+    private static func lastEvent(in url: URL) -> [String: Any]? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        let tail = min(size, 16_384)
+        if size > tail {
+            try? handle.seek(toOffset: UInt64(size - tail))
+        }
+        guard let data = try? handle.readToEnd(),
+              let text = String(data: data, encoding: .utf8)
+        else { return nil }
+        for line in text.split(whereSeparator: \.isNewline).reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let payload = trimmed.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any]
+            else { continue }
+            return object
+        }
+        return nil
+    }
+
+    private static func latestWrite(in directory: URL, fm: FileManager) -> (date: Date, url: URL)? {
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey, .isDirectoryKey]
         guard let entries = try? fm.contentsOfDirectory(
             at: directory,
@@ -140,12 +177,12 @@ enum AgentActivity {
             options: [.skipsHiddenFiles]
         ) else { return nil }
 
-        var latest: Date?
+        var latest: (date: Date, url: URL)?
         for entry in entries {
             let values = try? entry.resourceValues(forKeys: keys)
             if values?.isRegularFile == true, entry.pathExtension == "jsonl" {
-                if let date = values?.contentModificationDate, date > (latest ?? .distantPast) {
-                    latest = date
+                if let date = values?.contentModificationDate, date > (latest?.date ?? .distantPast) {
+                    latest = (date, entry)
                 }
                 continue
             }
@@ -157,8 +194,8 @@ enum AgentActivity {
             )) ?? []
             for sub in subs where sub.pathExtension == "jsonl" {
                 let written = try? sub.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                if let written, written > (latest ?? .distantPast) {
-                    latest = written
+                if let written, written > (latest?.date ?? .distantPast) {
+                    latest = (written, sub)
                 }
             }
         }

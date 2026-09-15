@@ -6,6 +6,7 @@ import Foundation
 /// of the way" — plist keys and `killall Dock` stay in here.
 enum NativeDock {
     static let cursorBundleID = "com.todesktop.230313mzl4w4u92"
+    static let grokBotBundleID = GrokBot.bundleID
     static let finderBundleID = "com.apple.finder"
 
     private static var dockDefaults: UserDefaults? {
@@ -44,6 +45,10 @@ enum NativeDock {
         if !seen.contains(cursorBundleID),
            let cursor = application(bundleID: cursorBundleID, fallbackName: "Cursor") {
             apps.insert(cursor, at: min(3, apps.count))
+        }
+        if !seen.contains(grokBotBundleID),
+           let grok = application(bundleID: grokBotBundleID, fallbackName: "Grok Bot") {
+            apps.insert(grok, at: min(4, apps.count))
         }
 
         return withFinder(apps)
