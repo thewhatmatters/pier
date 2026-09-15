@@ -81,7 +81,6 @@ struct DockView: View {
         case .cursor:
             CursorWidget(
                 snapshot: snapshot.cursor,
-                agents: snapshot.agents,
                 app: hostApp(for: .cursor),
                 running: snapshot.runningBundleIDs.contains(WidgetKind.cursor.bundleID),
                 metrics: metrics,
@@ -376,7 +375,6 @@ private struct AppIcon: View {
 
 private struct CursorWidget: View {
     let snapshot: CursorSnapshot
-    let agents: AgentSnapshot
     let app: PinnedApp?
     let running: Bool
     let metrics: Theme.Metrics
@@ -391,21 +389,21 @@ private struct CursorWidget: View {
             metrics: metrics,
             palette: palette,
             action: action,
-            attention: !agents.working.isEmpty
+            attention: snapshot.attention
         ) {
             HStack(spacing: 8) {
-                WidgetAppMark(app: app, systemName: agents.working.isEmpty
-                    ? "chevron.left.forwardslash.chevron.right"
-                    : "sparkle", metrics: metrics, palette: palette)
+                WidgetAppMark(app: app, systemName: snapshot.attention
+                    ? "sparkle"
+                    : "chevron.left.forwardslash.chevron.right", metrics: metrics, palette: palette)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(snapshot.label)
                         .font(Typeface.sans(metrics.widgetTemp, weight: .light))
                         .foregroundStyle(palette.widgetText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                    Text(agents.caption)
+                    Text(snapshot.caption)
                         .font(Typeface.sans(metrics.widgetCaption))
-                        .foregroundStyle(agents.working.isEmpty ? palette.widgetMuted : palette.widgetLive)
+                        .foregroundStyle(snapshot.attention ? palette.widgetLive : palette.widgetMuted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                         .padding(.top, -3)
@@ -413,20 +411,7 @@ private struct CursorWidget: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .help(cursorHelp)
-    }
-
-    private var cursorHelp: String {
-        var lines: [String] = []
-        if snapshot.running, let project = snapshot.project {
-            lines.append("In \(project)")
-        } else if snapshot.running {
-            lines.append("Cursor is running")
-        } else {
-            lines.append("Cursor is off")
-        }
-        lines.append(agents.help)
-        return lines.joined(separator: "\n")
+        .help(snapshot.help)
     }
 }
 
