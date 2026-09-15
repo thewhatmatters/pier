@@ -1,0 +1,51 @@
+# Pier
+
+Project: `pier-app`. A personal macOS dock. App launcher plus live tiles for Cursor (with running
+agents as a subtitle) and weather. It is a separate overlay, not an addition
+to Apple's Dock.
+
+## Build
+
+```bash
+./build.sh --install     # build, copy to /Applications, launch
+./build.sh               # build only, into ./build
+```
+
+While Pier is running, Apple's Dock is hidden by default (auto-hide plus a
+long hover delay so it does not pop up over our tiles). Quit Pier and the
+previous Dock setting comes back. The menu bar toggle **Hide macOS Dock**
+turns that off if you want both.
+
+A copy of the strip appears on every connected display, and follows
+displays as they are plugged in or removed.
+
+The bar uses a 16pt corner radius. Drag the top edge to grow or
+shrink the tiles. Drag an app or widget sideways to mix them in
+any order.
+
+Widgets are glass tiles on the glass bar — same stippled glyphs,
+horizontal and minimal. Type is Geist / Geist Mono; glyphs flip
+with the bar so they stay readable on the frost.
+
+The strip defaults to dark glass. The menu bar toggle **Dark Mode**
+switches to a light bar.
+
+## What the tiles show
+
+| Tile | Source |
+| --- | --- |
+| Apps | Seeded from your current macOS Dock pins; click to launch or activate. Right-click for Open, Hide, Quit (Option for Force Quit), Show in Finder, and Remove from Pier |
+| Cursor | Running / frontmost, plus the active window's project name. Subtitle lists working agents by the first prompt in their transcript under `~/.cursor/projects/*/agent-transcripts` (rescanned every ~8s, not from Activity Monitor). Cloud sessions (`bc-` ids) are included when they write locally |
+| Calendar | Today's events from EventKit. Shows the meeting in progress or the next one, plus how many more. Click opens Calendar.app |
+| Weather | Prefers Apple Weather via WeatherKit (500k calls/month included with the Developer Program). Location from Core Location, IP if that is denied. Falls back to Open-Meteo until App ID `so.whatmatters.pier` has the WeatherKit capability enabled. Click opens Weather.app |
+
+Cloud agents that never write a local transcript still will not appear.
+
+## Command line
+
+```bash
+./build.sh
+.build/release/Pier --selftest
+.build/release/Pier --status
+.build/release/Pier --render /tmp/pier
+```

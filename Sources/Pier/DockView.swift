@@ -1,0 +1,485 @@
+import AppKit
+import SwiftUI
+
+struct DockView: View {
+    let snapshot: DockSnapshot
+    var metrics: Theme.Metrics = Theme.metrics(tileSize: Theme.defaultTileSize)
+    var palette: Theme.Palette = Theme.palette(.dark)
+    var appearance: Theme.Appearance = .dark
+    var onLaunch: (PinnedApp) -> Void = { _ in }
+    var onOpenCursor: () -> Void = {}
+    var onOpenCalendar: () -> Void = {}
+    var onOpenWeather: () -> Void = {}
+    var stripOrder: [StripItem] = []
+    @ObservedObject private var reorder = DockReorder.shared
+
+    private var appsByID: [String: PinnedApp] {
+        Dictionary(uniqueKeysWithValues: snapshot.apps.map { ($0.bundleID, $0) })
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            HStack(spacing: 0) {
+                ForEach(Array(stripOrder.enumerated()), id: \.element.id) { index, item in
+                    stripItem(item)
+                    if index + 1 < stripOrder.count {
+                        Color.clear.frame(
+                            width: metrics.spacing(between: item, and: stripOrder[index + 1])
+                        )
+                    }
+                }
+            }
+            .animation(.easeInOut(duration: 0.16), value: stripOrder.map(\.id))
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.vertical, metrics.verticalPadding)
+
+            DockResizeHandle(height: metrics.resizeHandle)
+        }
+        .foregroundStyle(palette.textPrimary)
+        .preferredColorScheme(appearance.colorScheme)
+        .background { DockBackground(palette: palette) }
+    }
+
+    @ViewBuilder
+    private func stripItem(_ item: StripItem) -> some View {
+        switch item {
+        case .app(let bundleID):
+            if let app = appsByID[bundleID] {
+                AppTile(
+                    app: app,
+                    running: snapshot.runningBundleIDs.contains(app.bundleID),
+                    metrics: metrics,
+                    palette: palette,
+                    action: { onLaunch(app) }
+                )
+                .opacity(reorder.draggingID == item.id ? 0.72 : 1)
+            }
+        case .widget(let kind):
+            widget(for: kind)
+                .frame(width: metrics.widgetSlotWidth)
+                .opacity(reorder.draggingID == item.id ? 0.72 : 1)
+        }
+    }
+
+    @ViewBuilder
+    private func widget(for kind: WidgetKind) -> some View {
+        switch kind {
+        case .cursor:
+            CursorWidget(
+                snapshot: snapshot.cursor,
+                agents: snapshot.agents,
+                metrics: metrics,
+                palette: palette,
+                action: onOpenCursor
+            )
+        case .calendar:
+            CalendarWidget(
+                snapshot: snapshot.calendar,
+                metrics: metrics,
+                palette: palette,
+                action: onOpenCalendar,
+                onPrevious: { Store.shared.cycleCalendar(-1) },
+                onNext: { Store.shared.cycleCalendar(1) }
+            )
+        case .weather:
+            WeatherWidget(
+                snapshot: snapshot.weather,
+                pageCount: snapshot.weatherCount,
+                metrics: metrics,
+                palette: palette,
+                action: onOpenWeather,
+                onPrevious: { Store.shared.cycleWeather(-1) },
+                onNext: { Store.shared.cycleWeather(1) }
+            )
+        }
+    }
+}
+
+private struct DockBackground: View {
+    let palette: Theme.Palette
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+    }
+
+    var body: some View {
+        shape
+            .fill(palette.barFill)
+            .shadow(color: palette.barShadow, radius: Theme.barShadowRadius, y: Theme.barShadowY)
+            .overlay {
+                if #available(macOS 26.0, *) {
+                    shape
+                        .fill(.clear)
+                        .glassEffect(.regular.tint(palette.glassTint), in: shape)
+                } else {
+                    shape.fill(.ultraThinMaterial.opacity(0.55))
+                }
+            }
+            .overlay { shape.stroke(palette.barStroke, lineWidth: 0.8) }
+    }
+}
+
+private struct WidgetBackground: View {
+    let palette: Theme.Palette
+    let shape: RoundedRectangle
+
+    var body: some View {
+        shape
+            .fill(palette.widgetFill)
+            .overlay {
+                if #available(macOS 26.0, *) {
+                    shape
+                        .fill(.clear)
+                        .glassEffect(.regular.tint(palette.widgetGlassTint), in: shape)
+                } else {
+                    shape.fill(.ultraThinMaterial.opacity(0.7))
+                }
+            }
+            .overlay { shape.stroke(palette.widgetStroke, lineWidth: 0.8) }
+    }
+}
+
+private struct AppTile: View {
+    let app: PinnedApp
+    let running: Bool
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+
+    var body: some View {
+        AppIcon(app: app, metrics: metrics)
+            .frame(width: metrics.tileWidth, height: metrics.iconSize)
+            .contentShape(Rectangle())
+            .overlay {
+                AppTileClickLayer(app: app, running: running, metrics: metrics, onOpen: action)
+            }
+            .overlay(alignment: .bottom) {
+                if running {
+                    ZStack(alignment: .bottom) {
+                        RunningSpotlight(metrics: metrics, color: palette.runningDot)
+                        RunningTick(metrics: metrics, color: palette.runningDot)
+                    }
+                    .frame(width: metrics.tileWidth, height: 0, alignment: .bottom)
+                    .allowsHitTesting(false)
+                }
+            }
+            .help(app.name)
+    }
+}
+
+private struct RunningTick: View {
+    let metrics: Theme.Metrics
+    let color: Color
+
+    var body: some View {
+        UnevenRoundedRectangle(
+            topLeadingRadius: metrics.runningMarkRadius,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: metrics.runningMarkRadius,
+            style: .circular
+        )
+        .fill(color)
+        .frame(width: (metrics.tileWidth / 2).rounded(), height: metrics.runningMarkHeight)
+        .offset(y: metrics.dockBottomPadding)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct RunningSpotlight: View {
+    let metrics: Theme.Metrics
+    let color: Color
+
+    var body: some View {
+        let height = metrics.iconSize + metrics.dockBottomPadding
+        SpotlightCone()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        color.opacity(0.34),
+                        color.opacity(0.12),
+                        color.opacity(0)
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            )
+            .mask(
+                LinearGradient(
+                    colors: [.white, .white.opacity(0.35), .clear],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            )
+            .blur(radius: 8)
+            .frame(width: metrics.tileWidth, height: height)
+            .offset(y: metrics.dockBottomPadding)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct SpotlightCone: Shape {
+    func path(in rect: CGRect) -> Path {
+        let source = rect.width * 0.5
+        let inset = (rect.width - source) / 2
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: rect.width, y: 0))
+        path.addLine(to: CGPoint(x: inset + source, y: rect.height))
+        path.addLine(to: CGPoint(x: inset, y: rect.height))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct AppIcon: View {
+    let app: PinnedApp
+    let metrics: Theme.Metrics
+
+    var body: some View {
+        Image(nsImage: AppLaunch.icon(for: app))
+            .resizable()
+            .interpolation(.high)
+            .frame(width: metrics.iconSize, height: metrics.iconSize)
+    }
+}
+
+private struct CursorWidget: View {
+    let snapshot: CursorSnapshot
+    let agents: AgentSnapshot
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+
+    var body: some View {
+        WidgetTile(kind: .cursor, metrics: metrics, palette: palette, action: action) {
+            HStack(spacing: 8) {
+                HalftoneSymbol(
+                    systemName: agents.working.isEmpty
+                        ? "chevron.left.forwardslash.chevron.right"
+                        : "sparkle",
+                    size: metrics.widgetIcon,
+                    color: palette.widgetText
+                )
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(snapshot.label)
+                        .font(Typeface.sans(metrics.widgetTemp, weight: .light))
+                        .foregroundStyle(palette.widgetText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text(agents.caption)
+                        .font(Typeface.sans(metrics.widgetCaption))
+                        .foregroundStyle(agents.working.isEmpty ? palette.widgetMuted : palette.widgetLive)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.top, -3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Circle()
+                    .fill(snapshot.running ? palette.widgetLive : palette.widgetMuted.opacity(0.45))
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .help(agents.help)
+    }
+}
+
+private struct CalendarWidget: View {
+    let snapshot: CalendarSnapshot?
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+    var onPrevious: () -> Void = {}
+    var onNext: () -> Void = {}
+
+    var body: some View {
+        WidgetTile(
+            kind: .calendar,
+            metrics: metrics,
+            palette: palette,
+            action: action,
+            pageCount: snapshot?.count ?? 0,
+            onPrevious: onPrevious,
+            onNext: onNext
+        ) {
+            HStack(spacing: 8) {
+                ZStack {
+                    HalftoneSymbol(
+                        systemName: "calendar",
+                        size: metrics.widgetGlyph,
+                        color: palette.widgetText
+                    )
+                    Text(AppMarks.calendarDay())
+                        .font(Typeface.mono(max(8, metrics.widgetCaption), weight: .medium))
+                        .foregroundStyle(palette.widgetText)
+                        .offset(y: metrics.widgetGlyph * 0.12)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(snapshot?.headline ?? "—")
+                        .font(Typeface.sans(metrics.widgetTemp, weight: .light))
+                        .foregroundStyle(palette.widgetText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text(snapshot?.caption ?? " ")
+                        .font(Typeface.sans(metrics.widgetCaption))
+                        .foregroundStyle(snapshot?.status == .authorized && snapshot?.count ?? 0 > 0
+                                         ? palette.widgetLive
+                                         : palette.widgetMuted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.top, -3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .help(cycleHelp(snapshot?.help))
+    }
+
+    private func cycleHelp(_ help: String?) -> String {
+        let base = help ?? "Checking calendars…"
+        if (snapshot?.canCycle ?? false) {
+            return base + "\nClick the arrows to cycle today’s events."
+        }
+        return base
+    }
+}
+
+private struct WeatherWidget: View {
+    let snapshot: WeatherSnapshot?
+    let pageCount: Int
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+    var onPrevious: () -> Void = {}
+    var onNext: () -> Void = {}
+
+    var body: some View {
+        WidgetTile(
+            kind: .weather,
+            metrics: metrics,
+            palette: palette,
+            action: action,
+            pageCount: pageCount,
+            onPrevious: onPrevious,
+            onNext: onNext
+        ) {
+            HStack(spacing: 8) {
+                HalftoneSymbol(
+                    systemName: snapshot?.symbol ?? "cloud.fill",
+                    size: metrics.widgetGlyph,
+                    color: palette.widgetText
+                )
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(snapshot?.label ?? "—")
+                        .font(Typeface.mono(metrics.widgetTemp, weight: .light))
+                        .foregroundStyle(palette.widgetText)
+                        .lineLimit(1)
+                    Text(snapshot?.city ?? " ")
+                        .font(Typeface.sans(metrics.widgetCaption))
+                        .foregroundStyle(palette.widgetMuted)
+                        .lineLimit(1)
+                        .padding(.top, -3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .help(weatherHelp)
+    }
+
+    private var weatherHelp: String {
+        let base = snapshot.map { "\($0.city) · \($0.condition) · \($0.label) · \($0.source)" }
+            ?? "Fetching weather…"
+        if pageCount > 1 {
+            return base + "\nClick the arrows to cycle cities. Right-click to add or remove one."
+        }
+        return base + "\nRight-click to add another city."
+    }
+}
+
+private struct WidgetTile<Content: View>: View {
+    let kind: WidgetKind
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+    var pageCount: Int = 1
+    var onPrevious: () -> Void = {}
+    var onNext: () -> Void = {}
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.widgetRadius, style: .continuous)
+        content()
+            .padding(.leading, 10)
+            .padding(.trailing, pageCount > 1 ? 22 : 10)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity)
+            .frame(height: metrics.widgetInnerHeight)
+            .background { WidgetBackground(palette: palette, shape: shape) }
+            .overlay {
+                WidgetClickLayer(kind: kind, metrics: metrics, onOpen: action)
+            }
+            .overlay(alignment: .trailing) {
+                if pageCount > 1 {
+                    WidgetCycleControl(
+                        palette: palette,
+                        onPrevious: onPrevious,
+                        onNext: onNext
+                    )
+                    .padding(.trailing, 4)
+                }
+            }
+    }
+}
+
+private struct WidgetCycleControl: View {
+    let palette: Theme.Palette
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Image(systemName: "chevron.up")
+            Image(systemName: "chevron.down")
+        }
+        .font(.system(size: 8, weight: .semibold))
+        .foregroundStyle(palette.widgetMuted)
+        .frame(width: 16, height: 28)
+        .contentShape(Rectangle())
+        .overlay {
+            CycleClickLayer(onPrevious: onPrevious, onNext: onNext)
+        }
+        .allowsHitTesting(true)
+    }
+}
+
+private struct DockResizeHandle: View {
+    var width: CGFloat?
+    var height: CGFloat = 10
+    @ObservedObject private var settings = Settings.shared
+    @State private var originTile: Double?
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: width, height: height)
+            .frame(maxWidth: width == nil ? .infinity : width)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        if originTile == nil { originTile = settings.tileSize }
+                        let next = (originTile ?? settings.tileSize) - Double(value.translation.height)
+                        settings.tileSize = Theme.clampedTile(next)
+                    }
+                    .onEnded { _ in
+                        originTile = nil
+                    }
+            )
+    }
+}
