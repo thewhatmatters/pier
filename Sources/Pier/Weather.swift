@@ -69,6 +69,8 @@ enum Weather {
         let code = decoded.current.weather_code
         return WeatherSnapshot(
             temperature: Int(decoded.current.temperature_2m.rounded()),
+            high: decoded.daily?.temperature_2m_max?.first.map { Int($0.rounded()) },
+            low: decoded.daily?.temperature_2m_min?.first.map { Int($0.rounded()) },
             condition: condition(for: code),
             symbol: symbol(for: code),
             city: city,
@@ -90,6 +92,8 @@ enum Weather {
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,weather_code"),
+            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min"),
+            URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
@@ -98,10 +102,17 @@ enum Weather {
 
     static let ipLocationURL = URL(string: "https://ipwho.is/")!
 
-    static func snapshot(from current: CurrentWeather, city: String) -> WeatherSnapshot {
+    static func snapshot(
+        from current: CurrentWeather,
+        high: Measurement<UnitTemperature>? = nil,
+        low: Measurement<UnitTemperature>? = nil,
+        city: String
+    ) -> WeatherSnapshot {
         let fahrenheit = current.temperature.converted(to: .fahrenheit).value
         return WeatherSnapshot(
             temperature: Int(fahrenheit.rounded()),
+            high: high.map { Int($0.converted(to: .fahrenheit).value.rounded()) },
+            low: low.map { Int($0.converted(to: .fahrenheit).value.rounded()) },
             condition: conditionLabel(current.condition),
             symbol: filledSymbol(current.symbolName),
             city: city,
@@ -197,7 +208,13 @@ enum Weather {
     private static func fetchApple(for location: Location) async -> WeatherSnapshot? {
         do {
             let weather = try await WeatherService.shared.weather(for: location.clLocation)
-            return snapshot(from: weather.currentWeather, city: location.city)
+            let today = weather.dailyForecast.first
+            return snapshot(
+                from: weather.currentWeather,
+                high: today?.highTemperature,
+                low: today?.lowTemperature,
+                city: location.city
+            )
         } catch {
             NSLog("Pier: WeatherKit failed — \(error.localizedDescription)")
             return nil
@@ -225,9 +242,14 @@ enum Weather {
 
     private struct Forecast: Decodable {
         var current: Current
+        var daily: Daily?
         struct Current: Decodable {
             var temperature_2m: Double
             var weather_code: Int
+        }
+        struct Daily: Decodable {
+            var temperature_2m_max: [Double]?
+            var temperature_2m_min: [Double]?
         }
     }
 

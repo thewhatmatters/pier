@@ -14,6 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applySystemDockPreference()
         setUpStatusItem()
         panel.show()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            DockBadge.promptAccessIfNeeded()
+        }
 
         layoutObserver = NotificationCenter.default.addObserver(
             forName: .pierNeedsLayout,
@@ -75,6 +79,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dark.state = Settings.shared.appearance == .dark ? .on : .off
         menu.addItem(dark)
 
+        if !DockBadge.isAccessTrusted {
+            let badges = NSMenuItem(
+                title: "Allow Messages Badges…",
+                action: #selector(allowBadgeAccess),
+                keyEquivalent: ""
+            )
+            badges.target = self
+            menu.addItem(badges)
+        }
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit Pier", action: #selector(quit), keyEquivalent: "q")
@@ -99,6 +113,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleAppearance() {
         Settings.shared.appearance = Settings.shared.appearance == .dark ? .light : .dark
         panel.applyAppearance()
+    }
+
+    @objc private func allowBadgeAccess() {
+        DockBadge.requestAccessFromUser()
+        if !DockBadge.isAccessTrusted {
+            DockBadge.openAccessSettings()
+        }
+        Store.shared.refresh()
     }
 
     @objc private func quit() {

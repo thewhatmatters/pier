@@ -14,6 +14,14 @@ final class AppMenuController: NSObject {
     @objc func forceQuit() { AppLaunch.forceQuit(app) }
     @objc func reveal() { AppLaunch.reveal(app) }
     @objc func remove() { Settings.shared.removePinned(app) }
+    @objc func showAsIcon() {
+        guard let kind = WidgetKind.hosting(bundleID: app.bundleID) else { return }
+        Settings.shared.setIconOnly(kind, true)
+    }
+    @objc func showAsWidget() {
+        guard let kind = WidgetKind.hosting(bundleID: app.bundleID) else { return }
+        Settings.shared.setIconOnly(kind, false)
+    }
 }
 
 enum AppIconMenu {
@@ -52,6 +60,20 @@ enum AppIconMenu {
         let reveal = NSMenuItem(title: "Show in Finder", action: #selector(AppMenuController.reveal), keyEquivalent: "")
         reveal.target = controller
         menu.addItem(reveal)
+
+        if let kind = WidgetKind.hosting(bundleID: app.bundleID) {
+            menu.addItem(.separator())
+            let collapsed = Settings.shared.iconOnlyWidgets.contains(kind)
+            let presentation = NSMenuItem(
+                title: collapsed ? "Show Widget" : "Icon Only",
+                action: collapsed
+                    ? #selector(AppMenuController.showAsWidget)
+                    : #selector(AppMenuController.showAsIcon),
+                keyEquivalent: ""
+            )
+            presentation.target = controller
+            menu.addItem(presentation)
+        }
 
         if includeRemove {
             let remove = NSMenuItem(title: "Remove from Pier", action: #selector(AppMenuController.remove), keyEquivalent: "")
@@ -156,6 +178,17 @@ final class WeatherMenuController: NSObject {
     @objc func removeCity() { Store.shared.removeCurrentWeatherPlace() }
 }
 
+final class WidgetPresentationController: NSObject {
+    let kind: WidgetKind
+
+    init(kind: WidgetKind) {
+        self.kind = kind
+    }
+
+    @objc func showAsIcon() { Settings.shared.setIconOnly(kind, true) }
+    @objc func showAsWidget() { Settings.shared.setIconOnly(kind, false) }
+}
+
 enum WeatherPlaces {
     @MainActor
     static func promptAdd() {
@@ -188,6 +221,7 @@ final class TileClickCatcher: NSView {
     var kind: WidgetKind?
     var running = false
     private var weatherController: WeatherMenuController?
+    private var presentationController: WidgetPresentationController?
     var onOpen: () -> Void = {}
     var onDragBegin: () -> Void = {}
     var onDragChanged: (CGFloat) -> Void = { _ in }
@@ -271,12 +305,30 @@ final class TileClickCatcher: NSView {
             menu.popUp(positioning: nil, at: location, in: self)
             return
         }
-        if kind == .weather {
+        if let kind {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            appendWeatherItems(to: menu)
+            appendPresentationItem(kind, to: menu)
+            if kind == .weather {
+                appendWeatherItems(to: menu)
+            }
             menu.popUp(positioning: nil, at: location, in: self)
         }
+    }
+
+    private func appendPresentationItem(_ kind: WidgetKind, to menu: NSMenu) {
+        let controller = WidgetPresentationController(kind: kind)
+        presentationController = controller
+        let collapsed = Settings.shared.iconOnlyWidgets.contains(kind)
+        let item = NSMenuItem(
+            title: collapsed ? "Show Widget" : "Icon Only",
+            action: collapsed
+                ? #selector(WidgetPresentationController.showAsWidget)
+                : #selector(WidgetPresentationController.showAsIcon),
+            keyEquivalent: ""
+        )
+        item.target = controller
+        menu.addItem(item)
     }
 
     private func appendWeatherItems(to menu: NSMenu) {

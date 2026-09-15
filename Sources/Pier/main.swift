@@ -18,7 +18,18 @@ if CommandLine.arguments.contains("--status") {
         print("  - \(session.name)  \(session.project)  \(kind)  \(session.isWorking ? "working" : "quiet")  \(age)s ago")
     }
     print("Pinned apps: \(Settings.shared.pinnedApps.map(\.name).joined(separator: ", "))")
+    let badges = DockBadge.labels(for: Set(Settings.shared.pinnedApps.map(\.bundleID)))
+    if badges.isEmpty {
+        print("Badges: none")
+    } else {
+        print("Badges:")
+        for app in Settings.shared.pinnedApps {
+            guard let raw = badges[app.bundleID], let mark = DockBadge.mark(from: raw) else { continue }
+            print("  - \(app.name)  \(raw)  \(String(describing: mark))")
+        }
+    }
     print("Hide macOS Dock: \(Settings.shared.hideSystemDock)")
+    print("Badge access: \(DockBadge.isAccessTrusted ? "trusted" : "needs Accessibility")")
     print("Calendar access: \(Agenda.authorizationDescription())")
     _ = NSApplication.shared
     print("Displays: \(NSScreen.screens.count)")
@@ -62,7 +73,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--render"),
                 ],
                 now: Date()
             ),
-            weather: WeatherSnapshot(temperature: 72, condition: "Clear", symbol: "sun.max.fill", city: "Austin", source: "Apple Weather")
+            weather: WeatherSnapshot(temperature: 72, high: 81, low: 65, condition: "Clear", symbol: "sun.max.fill", city: "Austin", source: "Apple Weather")
         )
         let renderer = ImageRenderer(content: DockView(snapshot: snapshot).padding(24))
         renderer.scale = 2

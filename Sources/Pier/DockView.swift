@@ -12,6 +12,7 @@ struct DockView: View {
     var onOpenWeather: () -> Void = {}
     var stripOrder: [StripItem] = []
     @ObservedObject private var reorder = DockReorder.shared
+    @Namespace private var stripSpace
 
     private var appsByID: [String: PinnedApp] {
         Dictionary(uniqueKeysWithValues: snapshot.apps.map { ($0.bundleID, $0) })
@@ -29,7 +30,7 @@ struct DockView: View {
     var body: some View {
         ZStack(alignment: .top) {
             HStack(spacing: 0) {
-                ForEach(Array(visibleStrip.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(visibleStrip.enumerated()), id: \.element.layoutID) { index, item in
                     stripItem(item)
                     if index + 1 < visibleStrip.count {
                         Color.clear.frame(
@@ -38,7 +39,8 @@ struct DockView: View {
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.16), value: visibleStrip.map(\.id))
+            .animation(Theme.layoutAnimation, value: visibleStrip)
+            .environment(\.stripNamespace, stripSpace)
             .padding(.horizontal, metrics.horizontalPadding)
             .padding(.vertical, metrics.verticalPadding)
 
@@ -57,15 +59,17 @@ struct DockView: View {
                 AppTile(
                     app: app,
                     running: snapshot.runningBundleIDs.contains(app.bundleID),
+                    badge: snapshot.badges[app.bundleID],
                     metrics: metrics,
                     palette: palette,
                     action: { onLaunch(app) }
                 )
                 .opacity(reorder.draggingID == item.id ? 0.72 : 1)
+                .frame(width: metrics.itemWidth(item), alignment: .leading)
             }
         case .widget(let kind):
             widget(for: kind)
-                .frame(width: metrics.widgetSlotWidth)
+                .frame(width: metrics.itemWidth(item), alignment: .leading)
                 .opacity(reorder.draggingID == item.id ? 0.72 : 1)
         }
     }
@@ -156,6 +160,7 @@ private struct WidgetBackground: View {
 private struct AppTile: View {
     let app: PinnedApp
     let running: Bool
+    var badge: String?
     let metrics: Theme.Metrics
     let palette: Theme.Palette
     let action: () -> Void
@@ -167,6 +172,12 @@ private struct AppTile: View {
             .overlay {
                 AppTileClickLayer(app: app, running: running, metrics: metrics, onOpen: action)
             }
+            .overlay(alignment: .topTrailing) {
+                if let mark = DockBadge.mark(from: badge) {
+                    IconBadge(mark: mark, metrics: metrics, palette: palette)
+                        .offset(x: 3, y: -2)
+                }
+            }
             .overlay(alignment: .bottom) {
                 if running {
                     ZStack(alignment: .bottom) {
@@ -177,7 +188,37 @@ private struct AppTile: View {
                     .allowsHitTesting(false)
                 }
             }
-            .help(app.name)
+            .help(DockBadge.help(appName: app.name, raw: badge))
+    }
+}
+
+private struct IconBadge: View {
+    let mark: DockBadge.Mark
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+
+    var body: some View {
+        let height = metrics.badgeSize
+        Group {
+            switch mark {
+            case .dot:
+                Circle()
+                    .fill(palette.badgeFill)
+                    .frame(width: (height * 0.55).rounded(), height: (height * 0.55).rounded())
+            case .count(let text):
+                Text(text)
+                    .font(Typeface.sans(metrics.badgeFont, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, text.count > 1 ? 3.5 : 0)
+                    .frame(minWidth: height, minHeight: height)
+                    .background(palette.badgeFill, in: Capsule())
+            }
+        }
+        .overlay {
+            Capsule()
+                .stroke(.white.opacity(0.92), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -263,6 +304,7 @@ private struct AppIcon: View {
             .scaleEffect(fillsTile ? metrics.iconOpticalScale : 1)
             .frame(width: side, height: side)
             .clipped()
+            .stripMatchedIcon(app.bundleID)
     }
 }
 
@@ -404,13 +446,31 @@ private struct WeatherWidget: View {
                         .padding(.top, -3)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if let high = snapshot?.highLabel, let low = snapshot?.lowLabel {
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text(high)
+                            .font(Typeface.mono(metrics.widgetCaption, weight: .medium))
+                            .foregroundStyle(palette.widgetText)
+                        Text(low)
+                            .font(Typeface.mono(metrics.widgetCaption, weight: .medium))
+                            .foregroundStyle(palette.widgetMuted)
+                            .padding(.top, -1)
+                    }
+                    .monospacedDigit()
+                }
             }
         }
         .help(weatherHelp)
     }
 
     private var weatherHelp: String {
-        let base = snapshot.map { "\($0.city) · \($0.condition) · \($0.label) · \($0.source)" }
+        let base = snapshot.map { snap in
+            var line = "\(snap.city) · \(snap.condition) · \(snap.label)"
+            if let high = snap.highLabel, let low = snap.lowLabel {
+                line += " · H \(high) · L \(low)"
+            }
+            return line + " · \(snap.source)"
+        }
             ?? "Fetching weather…"
         if pageCount > 1 {
             return base + "\nClick the arrows to cycle cities. Right-click to add or remove one."
@@ -475,6 +535,7 @@ private struct WidgetTile<Content: View>: View {
             .overlay(alignment: .trailing) {
                 if pageCount > 1 {
                     WidgetCycleControl(
+                        metrics: metrics,
                         palette: palette,
                         onPrevious: onPrevious,
                         onNext: onNext
@@ -486,23 +547,34 @@ private struct WidgetTile<Content: View>: View {
 }
 
 private struct WidgetCycleControl: View {
+    let metrics: Theme.Metrics
     let palette: Theme.Palette
     let onPrevious: () -> Void
     let onNext: () -> Void
 
     var body: some View {
-        VStack(spacing: 1) {
-            Image(systemName: "chevron.up")
-            Image(systemName: "chevron.down")
+        VStack(spacing: 4) {
+            cycleButton("chevron.up")
+            cycleButton("chevron.down")
         }
-        .font(.system(size: 8, weight: .semibold))
-        .foregroundStyle(palette.widgetMuted)
-        .frame(width: 16, height: 28)
+        .frame(width: metrics.widgetCycleWidth)
         .contentShape(Rectangle())
         .overlay {
             CycleClickLayer(onPrevious: onPrevious, onNext: onNext)
         }
         .allowsHitTesting(true)
+    }
+
+    private func cycleButton(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 6, weight: .semibold))
+            .foregroundStyle(palette.widgetMuted)
+            .frame(width: metrics.widgetCycleButton, height: metrics.widgetCycleButton)
+            .background {
+                Circle()
+                    .fill(palette.widgetFill)
+                    .overlay { Circle().stroke(palette.widgetStroke, lineWidth: 0.8) }
+            }
     }
 }
 
@@ -536,5 +608,35 @@ private struct DockResizeHandle: View {
                         originTile = nil
                     }
             )
+    }
+}
+
+private struct StripNamespaceKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+extension EnvironmentValues {
+    var stripNamespace: Namespace.ID? {
+        get { self[StripNamespaceKey.self] }
+        set { self[StripNamespaceKey.self] = newValue }
+    }
+}
+
+private extension View {
+    func stripMatchedIcon(_ id: String) -> some View {
+        modifier(StripMatchedIcon(id: id))
+    }
+}
+
+private struct StripMatchedIcon: ViewModifier {
+    let id: String
+    @Environment(\.stripNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedGeometryEffect(id: id, in: namespace)
+        } else {
+            content
+        }
     }
 }

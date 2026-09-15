@@ -16,10 +16,11 @@ enum SelfTest {
         check("clear symbol", Weather.symbol(for: 0) == "sun.max.fill")
 
         let forecast = """
-        {"current":{"temperature_2m":72.4,"weather_code":2}}
+        {"current":{"temperature_2m":72.4,"weather_code":2},"daily":{"temperature_2m_max":[81.2],"temperature_2m_min":[64.8]}}
         """.data(using: .utf8)!
         let weather = try? Weather.snapshot(from: forecast, city: "Austin")
         check("forecast decode", weather?.temperature == 72 && weather?.condition == "Partly cloudy" && weather?.source == "Open-Meteo")
+        check("forecast high low", weather?.high == 81 && weather?.low == 65)
         check("fill symbol", Weather.filledSymbol("sun.max") == "sun.max.fill")
         check("already filled symbol", Weather.filledSymbol("cloud.fill") == "cloud.fill")
 
@@ -126,6 +127,11 @@ enum SelfTest {
         check("widget inset is 4", small.widgetInset == 4 && large.widgetInset == 4)
         check("strip gap is 4", small.gap == 4 && Theme.metrics(tileSize: 36).gap == 4)
         check(
+            "bar padding is even",
+            small.horizontalPadding == small.verticalPadding
+                && large.horizontalPadding == large.verticalPadding
+        )
+        check(
             "widget icon sits in equal inset",
             small.widgetInnerHeight == small.widgetGlyph + small.widgetInset * 2
                 && large.widgetInnerHeight == large.widgetGlyph + large.widgetInset * 2
@@ -161,6 +167,26 @@ enum SelfTest {
         check("cursor widget hosts Cursor", WidgetKind.cursor.bundleID == NativeDock.cursorBundleID)
         check("calendar widget hosts Calendar", WidgetKind.calendar.bundleID == AppMarks.calendarBundleID)
         check("weather widget hosts Weather", WidgetKind.weather.bundleID == "com.apple.weather")
+        check(
+            "widget and icon share a layout id",
+            StripItem.widget(.calendar).layoutID == StripItem.app(AppMarks.calendarBundleID).layoutID
+        )
+        let calendarApp = PinnedApp(bundleID: AppMarks.calendarBundleID, name: "Calendar", path: "/System/Applications/Calendar.app")
+        check(
+            "icon-only widget becomes an app pin",
+            StripItem.normalized(
+                [.widget(.calendar), .app(safari.bundleID)],
+                apps: [calendarApp, safari],
+                iconOnly: [.calendar]
+            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.weather)]
+        )
+        let calendarController = AppMenuController(app: calendarApp)
+        let calendarMenu = AppIconMenu.make(app: calendarApp, running: false, controller: calendarController)
+        let calendarTitles = calendarMenu.items.map(\.title)
+        check(
+            "widget host can collapse to an icon",
+            calendarTitles.contains("Icon Only") || calendarTitles.contains("Show Widget")
+        )
         let metrics = Theme.metrics(tileSize: 36)
         check(
             "strip spacing is even",
@@ -221,11 +247,31 @@ enum SelfTest {
         check("in-progress event is now", current.headline == "Standup" && current.caption.hasPrefix("Now"))
         let empty = Agenda.summarize(events: [], now: noon, timeZone: tz)
         check("empty day is free", empty.headline == "Free")
+        let afterStandup = calendar.date(byAdding: .hour, value: 15, to: day)!
+        let remaining = Agenda.summarize(events: [standup, review], now: afterStandup, timeZone: tz)
+        check("elapsed event is dropped", remaining.events == [review] && remaining.headline == "Design review")
+        let allDay = CalendarEvent(title: "Holiday", start: day, end: calendar.date(byAdding: .day, value: 1, to: day)!, isAllDay: true)
+        check("all-day event stays", Agenda.droppingElapsed([allDay, standup], now: afterStandup) == [allDay])
         check("cycle wraps forward", Agenda.cycleIndex(2, count: 3, by: 1) == 0)
         check("cycle wraps backward", Agenda.cycleIndex(0, count: 3, by: -1) == 2)
         check("cycled event is the next one", current.selecting(1).headline == "Design review")
         let range = Agenda.dayRange(containing: noon, calendar: calendar)
         check("day range is 24 hours", range.end.timeIntervalSince(range.start) == 86_400)
+        check("badge hides empty", DockBadge.mark(from: "") == nil && DockBadge.mark(from: "0") == nil)
+        check("badge shows a count", DockBadge.mark(from: "1") == .count("1"))
+        check("badge caps at 99+", DockBadge.mark(from: "375") == .count("99+"))
+        check("badge accepts a dot", DockBadge.mark(from: "•") == .dot)
+        check("badge help names unread", DockBadge.help(appName: "Slack", raw: "1") == "Slack — 1 unread")
+        check("messages title maps", DockBadge.bundleID(title: "Messages", url: nil) == AppMarks.messagesBundleID)
+        check("imessage title maps", DockBadge.bundleID(title: "iMessage", url: nil) == AppMarks.messagesBundleID)
+        let liveBadges = DockBadge.labelsByBundleID()
+        check("badge reader stays upright", true)
+        if let slack = liveBadges["com.tinyspeck.slackmacgap"] {
+            check("slack badge parses", DockBadge.mark(from: slack) != nil)
+        }
+        if let discord = liveBadges["com.hnc.Discord"] {
+            check("discord badge parses", DockBadge.mark(from: discord) != nil)
+        }
 
         print(failures == 0 ? "\nPASS" : "\nFAIL — \(failures) checks")
         return failures == 0 ? 0 : 1

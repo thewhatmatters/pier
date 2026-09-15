@@ -136,9 +136,22 @@ final class Store: ObservableObject {
         let weather = weatherPages.indices.contains(weatherIndex)
             ? weatherPages[weatherIndex]
             : snapshot.weather
+        if let snap = calendar, snap.status == .authorized {
+            let previous = snap.selected
+            let nextCal = Agenda.summarize(events: snap.events, now: Date(), timeZone: snap.timeZone)
+            if let previous, let keep = nextCal.events.firstIndex(where: { $0 == previous }) {
+                calendar = nextCal.selecting(keep)
+                calendarIndex = keep
+            } else {
+                calendar = nextCal
+                calendarIndex = nextCal.selectedIndex
+            }
+        }
+        let pinned = Settings.shared.pinnedApps
         let next = DockSnapshot(
-            apps: Settings.shared.pinnedApps,
+            apps: pinned,
             runningBundleIDs: AppLaunch.runningBundleIDs(),
+            badges: DockBadge.labels(for: Set(pinned.map(\.bundleID))),
             cursor: CursorStatus.snapshot(),
             agents: agents,
             calendar: calendar,

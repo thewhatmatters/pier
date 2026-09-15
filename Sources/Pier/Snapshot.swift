@@ -68,17 +68,23 @@ struct AgentSnapshot: Equatable {
 
 struct WeatherSnapshot: Equatable {
     var temperature: Int
+    var high: Int? = nil
+    var low: Int? = nil
     var condition: String
     var symbol: String
     var city: String
     var source: String
 
     var label: String { "\(temperature)°" }
+    var highLabel: String? { high.map { "\($0)°" } }
+    var lowLabel: String? { low.map { "\($0)°" } }
+    var hasRange: Bool { high != nil && low != nil }
 }
 
 struct DockSnapshot: Equatable {
     var apps: [PinnedApp]
     var runningBundleIDs: Set<String>
+    var badges: [String: String] = [:]
     var cursor: CursorSnapshot
     var agents: AgentSnapshot
     var calendar: CalendarSnapshot?
@@ -88,6 +94,7 @@ struct DockSnapshot: Equatable {
     static let empty = DockSnapshot(
         apps: [],
         runningBundleIDs: [],
+        badges: [:],
         cursor: CursorSnapshot(running: false, frontmost: false, windowTitle: nil),
         agents: AgentSnapshot(sessions: []),
         calendar: nil,

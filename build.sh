@@ -50,6 +50,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>Pier shows today’s events on the calendar tile.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>Pier shows today’s events on the calendar tile.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Pier reads Dock badges so Messages, Slack, and Discord can show unread counts.</string>
     <key>NSHumanReadableCopyright</key><string>Copyright © 2026 WhatMatters. All rights reserved.</string>
     <key>ATSApplicationFontsPath</key><string>Fonts</string>
 </dict>

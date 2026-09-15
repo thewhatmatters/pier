@@ -85,11 +85,12 @@ enum Agenda {
         now: Date,
         timeZone: TimeZone = .current
     ) -> CalendarSnapshot {
+        let visible = droppingElapsed(events, now: now)
         return CalendarSnapshot(
             status: .authorized,
-            events: events,
-            selectedIndex: initialIndex(in: events, now: now),
-            help: events.isEmpty ? "No events on the calendar today" : help(for: events, timeZone: timeZone),
+            events: visible,
+            selectedIndex: initialIndex(in: visible, now: now),
+            help: visible.isEmpty ? "No events on the calendar today" : help(for: visible, timeZone: timeZone),
             idleCaption: nil,
             now: now,
             timeZone: timeZone
@@ -122,6 +123,11 @@ enum Agenda {
             }
             .sorted { $0.start < $1.start }
         return summarize(events: mapped, now: now)
+    }
+
+    /// Timed events drop once they end. All-day items stay until the day rolls over.
+    static func droppingElapsed(_ events: [CalendarEvent], now: Date) -> [CalendarEvent] {
+        events.filter { $0.isAllDay || $0.end > now }
     }
 
     static func initialIndex(in events: [CalendarEvent], now: Date) -> Int {

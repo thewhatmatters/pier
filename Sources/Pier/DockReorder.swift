@@ -26,6 +26,10 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
 
     static let standard: [WidgetKind] = [.cursor, .calendar, .weather]
 
+    static func hosting(bundleID: String) -> WidgetKind? {
+        standard.first { $0.bundleID == bundleID }
+    }
+
     static func normalized(_ order: [WidgetKind]) -> [WidgetKind] {
         var seen = Set<WidgetKind>()
         var result: [WidgetKind] = []
@@ -50,7 +54,24 @@ enum StripItem: Equatable, Identifiable, Codable {
         }
     }
 
-    static func normalized(_ items: [StripItem], apps: [PinnedApp]) -> [StripItem] {
+    /// Stable across Icon Only ↔ widget so the slot can morph instead of popping.
+    var layoutID: String {
+        switch self {
+        case .widget(let kind):
+            return "host:\(kind.rawValue)"
+        case .app(let bundleID):
+            if let kind = WidgetKind.hosting(bundleID: bundleID) {
+                return "host:\(kind.rawValue)"
+            }
+            return "app:\(bundleID)"
+        }
+    }
+
+    static func normalized(
+        _ items: [StripItem],
+        apps: [PinnedApp],
+        iconOnly: Set<WidgetKind> = []
+    ) -> [StripItem] {
         let appIDs = Set(apps.map(\.bundleID))
         var seenApp = Set<String>()
         var seenWidget = Set<WidgetKind>()
@@ -61,23 +82,31 @@ enum StripItem: Equatable, Identifiable, Codable {
                 guard appIDs.contains(bundleID), seenApp.insert(bundleID).inserted else { continue }
                 result.append(item)
             case .widget(let kind):
-                guard seenWidget.insert(kind).inserted else { continue }
-                result.append(item)
+                if iconOnly.contains(kind) {
+                    guard appIDs.contains(kind.bundleID), seenApp.insert(kind.bundleID).inserted else { continue }
+                    result.append(.app(kind.bundleID))
+                } else {
+                    guard seenWidget.insert(kind).inserted else { continue }
+                    result.append(item)
+                }
             }
         }
         for app in apps where seenApp.insert(app.bundleID).inserted {
             result.append(.app(app.bundleID))
         }
-        for kind in WidgetKind.standard where seenWidget.insert(kind).inserted {
+        for kind in WidgetKind.standard where !iconOnly.contains(kind) && seenWidget.insert(kind).inserted {
             result.append(.widget(kind))
         }
-        return foldingAppsCoveredByWidgets(result)
+        return foldingAppsCoveredByWidgets(result, iconOnly: iconOnly)
     }
 
-    /// A Cursor/Calendar/Weather pin is the widget, not a second icon.
-    static func foldingAppsCoveredByWidgets(_ items: [StripItem]) -> [StripItem] {
+    /// An expanded Cursor/Calendar/Weather pin is the widget, not a second icon.
+    static func foldingAppsCoveredByWidgets(
+        _ items: [StripItem],
+        iconOnly: Set<WidgetKind> = []
+    ) -> [StripItem] {
         let claimed = Set(items.compactMap { item -> String? in
-            if case .widget(let kind) = item { return kind.bundleID }
+            if case .widget(let kind) = item, !iconOnly.contains(kind) { return kind.bundleID }
             return nil
         })
         return items.filter { item in

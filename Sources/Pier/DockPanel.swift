@@ -106,7 +106,18 @@ final class DockPanel {
             || abs(current.size.width - frame.size.width) > 0.5
             || abs(current.size.height - frame.size.height) > 0.5
         else { return }
-        instance.window.setFrame(frame, display: true)
+        let sizeChanged = abs(current.size.width - frame.size.width) > 2
+            || abs(current.size.height - frame.size.height) > 2
+        if sizeChanged, current.width > 40 {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Theme.layoutDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.allowsImplicitAnimation = true
+                instance.window.animator().setFrame(frame, display: true)
+            }
+        } else {
+            instance.window.setFrame(frame, display: true)
+        }
     }
 
     private func makeInstance(displayID: CGDirectDisplayID) -> Instance {
@@ -209,6 +220,8 @@ struct DockRoot: View {
             width: settings.metrics.stripWidth(items: StripItem.foldingAppsCoveredByWidgets(settings.stripOrder)),
             height: settings.metrics.dockHeight
         )
+        .animation(Theme.layoutAnimation, value: settings.stripOrder)
+        .animation(Theme.layoutAnimation, value: settings.iconOnlyWidgets)
         .padding(settings.metrics.shadowBleed)
         .onChange(of: settings.hideSystemDock) {
             NotificationCenter.default.post(name: .pierNeedsLayout, object: nil)
@@ -222,6 +235,9 @@ struct DockRoot: View {
             }
         }
         .onChange(of: settings.appearance) {
+            NotificationCenter.default.post(name: .pierNeedsLayout, object: nil)
+        }
+        .onChange(of: settings.iconOnlyWidgets.map(\.rawValue)) {
             NotificationCenter.default.post(name: .pierNeedsLayout, object: nil)
         }
     }

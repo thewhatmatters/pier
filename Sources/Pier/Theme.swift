@@ -7,6 +7,8 @@ enum Theme {
     static let aboveSystemDock: CGFloat = 8
     static let barShadowRadius: CGFloat = 18
     static let barShadowY: CGFloat = 6
+    static let layoutAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
+    static let layoutDuration = 0.42
     static let minTileSize: Double = 24
     static let maxTileSize: Double = 96
     static let defaultTileSize: Double = 36
@@ -37,6 +39,7 @@ enum Theme {
         var widgetText: Color
         var widgetMuted: Color
         var widgetLive: Color
+        var badgeFill: Color
     }
 
     static func palette(_ appearance: Appearance) -> Palette {
@@ -56,7 +59,8 @@ enum Theme {
                 widgetStroke: Color.white.opacity(0.22),
                 widgetText: .white,
                 widgetMuted: Color.white.opacity(0.55),
-                widgetLive: Color(hex: 0x7DFF9A)
+                widgetLive: Color(hex: 0x7DFF9A),
+                badgeFill: Color(hex: 0xFF3B30)
             )
         case .light:
             return Palette(
@@ -73,7 +77,8 @@ enum Theme {
                 widgetStroke: Color.black.opacity(0.12),
                 widgetText: Color(hex: 0x1C1C1E),
                 widgetMuted: Color(hex: 0x636366),
-                widgetLive: Color(hex: 0x1A7F37)
+                widgetLive: Color(hex: 0x1A7F37),
+                badgeFill: Color(hex: 0xFF3B30)
             )
         }
     }
@@ -88,12 +93,13 @@ enum Theme {
         var gap: CGFloat { max(4, (tileSize * 0.04).rounded()) }
         var widgetGap: CGFloat { gap }
         var verticalPadding: CGFloat { max(6, (tileSize * 0.2).rounded()) }
-        var horizontalPadding: CGFloat { max(10, (tileSize * 0.35).rounded()) }
+        var horizontalPadding: CGFloat { verticalPadding }
         var runningMarkHeight: CGFloat { 2 }
         var runningMarkRadius: CGFloat { 2 }
         var dockBottomPadding: CGFloat { max(verticalPadding, runningMarkHeight) }
         var widgetInset: CGFloat { 4 }
         var widgetCycleWidth: CGFloat { 16 }
+        var widgetCycleButton: CGFloat { 12 }
         var widgetInnerHeight: CGFloat {
             (widgetGlyph + widgetInset * 2).rounded()
         }
@@ -119,6 +125,8 @@ enum Theme {
         var dividerWidth: CGFloat { 12 }
         var dividerHeight: CGFloat { max(16, (tileSize * 0.72).rounded()) }
         var resizeHandle: CGFloat { 10 }
+        var badgeSize: CGFloat { max(13, (iconSize * 0.34).rounded()) }
+        var badgeFont: CGFloat { max(8, (badgeSize * 0.58).rounded()) }
 
         func itemWidth(_ item: StripItem) -> CGFloat {
             switch item {

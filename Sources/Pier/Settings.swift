@@ -15,6 +15,7 @@ final class Settings: ObservableObject {
         static let widgetOrder = "widgetOrder"
         static let stripOrder = "stripOrder"
         static let weatherPlaces = "weatherPlaces"
+        static let iconOnlyWidgets = "iconOnlyWidgets"
     }
 
     @Published var pinnedApps: [PinnedApp] {
@@ -46,6 +47,10 @@ final class Settings: ObservableObject {
 
     @Published var weatherPlaces: [WeatherPlace] {
         didSet { save(weatherPlaces, key: Key.weatherPlaces) }
+    }
+
+    @Published var iconOnlyWidgets: [WidgetKind] {
+        didSet { save(iconOnlyWidgets, key: Key.iconOnlyWidgets) }
     }
 
     var metrics: Theme.Metrics { Theme.metrics(tileSize: tileSize) }
@@ -136,7 +141,15 @@ final class Settings: ObservableObject {
         } else {
             weatherPlaces = []
         }
-        var normalized = StripItem.normalized(migrated, apps: apps)
+        let iconOnly: [WidgetKind]
+        if let data = defaults.data(forKey: Key.iconOnlyWidgets),
+           let stored = try? JSONDecoder().decode([WidgetKind].self, from: data) {
+            iconOnly = stored
+        } else {
+            iconOnly = []
+        }
+        iconOnlyWidgets = iconOnly
+        var normalized = StripItem.normalized(migrated, apps: apps, iconOnly: Set(iconOnly))
         if apps.contains(where: { $0.bundleID == NativeDock.finderBundleID }),
            !normalized.contains(.app(NativeDock.finderBundleID)) {
             normalized.insert(.app(NativeDock.finderBundleID), at: 0)
@@ -155,6 +168,34 @@ final class Settings: ObservableObject {
     func removeWeatherPlace(at index: Int) {
         guard weatherPlaces.indices.contains(index) else { return }
         weatherPlaces.remove(at: index)
+    }
+
+    func setIconOnly(_ kind: WidgetKind, _ iconOnly: Bool) {
+        var only = Set(iconOnlyWidgets)
+        if iconOnly {
+            only.insert(kind)
+            if let app = NativeDock.application(bundleID: kind.bundleID, fallbackName: kind.fallbackName),
+               !pinnedApps.contains(where: { $0.bundleID == app.bundleID }) {
+                pinnedApps.append(app)
+            }
+        } else {
+            only.remove(kind)
+        }
+        var items = stripOrder
+        if iconOnly {
+            if let index = items.firstIndex(of: .widget(kind)) {
+                items[index] = .app(kind.bundleID)
+            } else if !items.contains(.app(kind.bundleID)) {
+                items.append(.app(kind.bundleID))
+            }
+        } else if let index = items.firstIndex(of: .app(kind.bundleID)) {
+            items[index] = .widget(kind)
+        } else if !items.contains(.widget(kind)) {
+            items.append(.widget(kind))
+        }
+        iconOnlyWidgets = WidgetKind.standard.filter(only.contains)
+        stripOrder = StripItem.normalized(items, apps: pinnedApps, iconOnly: only)
+        NotificationCenter.default.post(name: .pierNeedsLayout, object: nil)
     }
 
     private func syncDerivedOrder() {
