@@ -10,12 +10,9 @@ final class Store: ObservableObject {
 
     private var timer: Timer?
     private var weatherTask: Task<Void, Never>?
-    private var agentTask: Task<Void, Never>?
     private var calendarTask: Task<Void, Never>?
     private var lastWeatherFetch = Date.distantPast
-    private var lastAgentScan = Date.distantPast
     private var lastCalendarFetch = Date.distantPast
-    private var agents = AgentSnapshot(sessions: [])
     private var calendar: CalendarSnapshot?
     private var calendarIndex = 0
     private var weatherPages: [WeatherSnapshot] = []
@@ -27,7 +24,6 @@ final class Store: ObservableObject {
     private enum Pulse {
         static let dock: TimeInterval = 3
         static let weather: TimeInterval = 15 * 60
-        static let agents: TimeInterval = 8
         static let calendar: TimeInterval = 120
     }
 
@@ -70,7 +66,6 @@ final class Store: ObservableObject {
         timer?.invalidate()
         timer = nil
         weatherTask?.cancel()
-        agentTask?.cancel()
         calendarTask?.cancel()
     }
 
@@ -87,30 +82,10 @@ final class Store: ObservableObject {
         if Date().timeIntervalSince(lastWeatherFetch) > Pulse.weather {
             weatherTask = Task { await refreshWeather() }
         }
-        if Date().timeIntervalSince(lastAgentScan) > Pulse.agents {
-            scanAgents()
-        }
         refreshGrokBot()
         if Date().timeIntervalSince(lastCalendarFetch) > Pulse.calendar {
             calendarTask = Task { await refreshCalendar() }
         }
-        publish()
-    }
-
-    private func scanAgents() {
-        lastAgentScan = Date()
-        agentTask?.cancel()
-        agentTask = Task.detached(priority: .utility) {
-            let next = AgentActivity.snapshot()
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                Store.shared.applyAgents(next)
-            }
-        }
-    }
-
-    private func applyAgents(_ next: AgentSnapshot) {
-        agents = next
         publish()
     }
 
@@ -189,8 +164,7 @@ final class Store: ObservableObject {
             apps: pinned,
             runningBundleIDs: AppLaunch.runningBundleIDs(),
             badges: DockBadge.labels(for: Set(pinned.map(\.bundleID))),
-            cursor: CursorStatus.snapshot(),
-            agents: agents,
+            cursor: CursorTile.snapshot(),
             calendar: calendar,
             weather: weather,
             weatherCount: weatherPages.count,

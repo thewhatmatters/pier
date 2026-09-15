@@ -8,11 +8,10 @@ if CommandLine.arguments.contains("--selftest") {
 }
 
 if CommandLine.arguments.contains("--status") {
-    let cursor = CursorStatus.snapshot()
-    let agents = AgentActivity.snapshot()
-    print("Cursor: \(cursor.running ? "running" : "off")  \(cursor.label)\(cursor.windowTitle.map { "  (\($0))" } ?? "")")
-    print("Agents: \(agents.caption)  \(agents.working.count) working / \(agents.sessions.count) recent")
-    for session in agents.sessions.prefix(8) {
+    let cursor = CursorTile.snapshot()
+    print("Cursor: \(cursor.running ? "running" : "off")  \(cursor.label)")
+    print("Agents: \(cursor.caption)  \(cursor.working.count) working / \(cursor.sessions.count) recent")
+    for session in cursor.sessions.prefix(8) {
         let age = Int(Date().timeIntervalSince(session.updatedAt))
         let kind = session.kind == .cloud ? "cloud" : "local"
         print("  - \(session.name)  \(session.project)  \(kind)  \(session.isWorking ? "working" : "quiet")  \(age)s ago")
@@ -59,17 +58,20 @@ if let index = CommandLine.arguments.firstIndex(of: "--render"),
                 PinnedApp(bundleID: NativeDock.cursorBundleID, name: "Cursor", path: "/Applications/Cursor.app")
             ],
             runningBundleIDs: [NativeDock.cursorBundleID],
-            cursor: CursorSnapshot(running: true, frontmost: true, windowTitle: "DockView.swift — dock"),
-            agents: AgentSnapshot(sessions: [
-                AgentSession(
-                    id: "1",
-                    project: "dock",
-                    title: "Fold agents into Cursor",
-                    kind: .local,
-                    updatedAt: Date(),
-                    isWorking: true
-                )
-            ]),
+            cursor: CursorSnapshot(
+                running: true,
+                project: "dock",
+                sessions: [
+                    AgentSession(
+                        id: "1",
+                        project: "dock",
+                        title: "Fold agents into Cursor",
+                        kind: .local,
+                        updatedAt: Date(),
+                        isWorking: true
+                    )
+                ]
+            ),
             calendar: Agenda.summarize(
                 events: [
                     CalendarEvent(

@@ -30,21 +30,49 @@ enum SelfTest {
         let location = try? Weather.location(from: ip)
         check("ip location", location?.city == "Austin" && location?.latitude == 30.27)
 
-        check("slug after Development", AgentActivity.projectName(fromSlug: "Users-digitalalchemist-Development-dock") == "dock")
-        check("slug studio", AgentActivity.projectName(fromSlug: "Users-digitalalchemist-Development-whatmatters-studio") == "whatmatters-studio")
-        check("slug without marker", AgentActivity.projectName(fromSlug: "empty-window") == "empty-window")
+        func writeTranscript(root: URL, slug: String, id: String, body: String, written: Date) {
+            let session = root.appendingPathComponent("\(slug)/agent-transcripts/\(id)", isDirectory: true)
+            try? FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+            let file = session.appendingPathComponent("\(id).jsonl")
+            try? body.write(to: file, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.modificationDate: written], ofItemAtPath: file.path)
+        }
 
-        check("window title project", CursorStatus.projectName(fromWindowTitle: "DockView.swift — dock") == "dock")
-        check("plain window title", CursorStatus.projectName(fromWindowTitle: "dock") == "dock")
+        func tile(
+            running: Bool = true,
+            windowTitle: String? = nil,
+            projectsRoot: URL,
+            workspaceStorage: URL? = nil,
+            now: Date
+        ) -> CursorSnapshot {
+            CursorTile.snapshot(
+                now: now,
+                running: running,
+                windowTitle: windowTitle,
+                projectsRoot: projectsRoot,
+                workspaceStorage: workspaceStorage
+            )
+        }
+
+        let now = Date()
+        let emptyRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pier-empty-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: emptyRoot, withIntermediateDirectories: true)
+
+        check("cursor off", tile(running: false, projectsRoot: emptyRoot, now: now).label == "Off")
+        check("cursor running with no project", tile(running: true, projectsRoot: emptyRoot, now: now).label == "Cursor")
+        check("window title project", tile(windowTitle: "DockView.swift — dock", projectsRoot: emptyRoot, now: now).label == "dock")
+        check("plain window title", tile(windowTitle: "dock", projectsRoot: emptyRoot, now: now).label == "dock")
         check(
             "dirty window title project",
-            CursorStatus.projectName(fromWindowTitle: "● DockView.swift — pier-app") == "pier-app"
+            tile(windowTitle: "● DockView.swift — pier-app", projectsRoot: emptyRoot, now: now).label == "pier-app"
         )
         check(
             "cursor suffix is stripped",
-            CursorStatus.projectName(fromWindowTitle: "DockView.swift — pier-app — Cursor") == "pier-app"
+            tile(windowTitle: "DockView.swift — pier-app — Cursor", projectsRoot: emptyRoot, now: now).label == "pier-app"
         )
-        check("generic cursor title is empty", CursorStatus.projectName(fromWindowTitle: "Cursor") == nil)
+        check("generic cursor title is empty", tile(windowTitle: "Cursor", projectsRoot: emptyRoot, now: now).label == "Cursor")
+
         let workspaceRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("pier-ws-\(UUID().uuidString)", isDirectory: true)
         let workspaceFolder = workspaceRoot.appendingPathComponent("hash", isDirectory: true)
@@ -56,61 +84,98 @@ enum SelfTest {
             atomically: true,
             encoding: .utf8
         )
-        check("workspace folder name", CursorStatus.lastWorkspaceName(in: workspaceRoot) == "pier-app")
+        check(
+            "workspace folder name",
+            tile(windowTitle: "Cursor", projectsRoot: emptyRoot, workspaceStorage: workspaceRoot, now: now).label == "pier-app"
+        )
         try? FileManager.default.removeItem(at: workspaceRoot)
 
-        let now = Date()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pier-selftest-\(UUID().uuidString)", isDirectory: true)
-        let session = root
-            .appendingPathComponent("Users-me-Development-dock/agent-transcripts/aaaa", isDirectory: true)
-        try? FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
-        let file = session.appendingPathComponent("aaaa.jsonl")
-        try? """
-        <user_query>
-        Build the dock overlay
-        </user_query>
-        """.write(to: file, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: file.path)
-
-        let working = AgentActivity.scan(now: now, projectsRoot: root, workingWindow: 120)
-        check("working session detected", working.count == 1 && working[0].isWorking && working[0].project == "dock")
-        check("cursor live when an agent works", !working.isEmpty)
-        check("working session has a title", working[0].title == "Build the dock overlay")
-        check(
-            "live turn is working",
-            AgentActivity.isLive(lastEvent: ["role": "assistant"], written: now, now: now)
+        writeTranscript(
+            root: root,
+            slug: "Users-me-Development-dock",
+            id: "aaaa",
+            body: """
+            {"role":"user","message":"<user_query>\\nBuild the dock overlay\\n</user_query>"}
+            {"role":"assistant"}
+            """,
+            written: now
         )
-        check(
-            "ended turn is quiet",
-            AgentActivity.isLive(lastEvent: ["type": "turn_ended", "status": "success"], written: now, now: now) == false
+        writeTranscript(
+            root: root,
+            slug: "Users-digitalalchemist-Development-whatmatters-studio",
+            id: "bc-abc123",
+            body: """
+            {"role":"user","message":"<user_query>\\nFold agents into Cursor\\n</user_query>"}
+            {"role":"assistant"}
+            """,
+            written: now.addingTimeInterval(-1)
         )
-        check("cloud ids are marked cloud", AgentActivity.kind(fromID: "bc-abc123") == .cloud)
-        check("uuid ids are local", AgentActivity.kind(fromID: "aaaa") == .local)
-        check(
-            "title from first prompt",
-            AgentActivity.title(fromTranscriptPrefix: "<user_query>\nFold agents into Cursor\n</user_query>") == "Fold agents into Cursor"
-        )
-        check(
-            "title skips a leading URL",
-            AgentActivity.title(fromTranscriptPrefix: "<user_query>\\nhttps://dockset.app\\nWhat should Pier show?</user_query>") == "What should Pier show?"
-        )
-        check(
-            "URL-only prompt has no title",
-            AgentActivity.title(fromTranscriptPrefix: "<user_query>\nhttps://dockset.app\n</user_query>") == nil
-        )
-        check(
-            "quiet caption",
-            AgentSnapshot(sessions: []).caption == "Quiet"
+        writeTranscript(
+            root: root,
+            slug: "empty-window",
+            id: "url-only",
+            body: """
+            {"role":"user","message":"<user_query>\\nhttps://dockset.app\\n</user_query>"}
+            {"role":"assistant"}
+            """,
+            written: now.addingTimeInterval(-2)
         )
 
-        let stale = AgentActivity.scan(
-            now: now.addingTimeInterval(400),
-            projectsRoot: root,
-            workingWindow: 120
+        let working = tile(windowTitle: "DockView.swift — dock", projectsRoot: root, now: now)
+        let dock = working.sessions.first { $0.id == "aaaa" }
+        let cloud = working.sessions.first { $0.id == "bc-abc123" }
+        let urlOnly = working.sessions.first { $0.id == "url-only" }
+        check("working session detected", dock?.isWorking == true && dock?.project == "dock")
+        check("project label sits on the same snapshot", working.label == "dock" && working.attention)
+        check("cursor live when an agent works", working.attention && working.caption != "Quiet")
+        check("working session has a title", dock?.title == "Build the dock overlay")
+        check("slug studio", cloud?.project == "whatmatters-studio")
+        check("slug without marker", urlOnly?.project == "empty-window")
+        check("title from first prompt", cloud?.title == "Fold agents into Cursor")
+        check("URL-only prompt falls back to project", urlOnly?.isWorking == true && urlOnly?.title == "empty-window")
+        check("cloud ids are marked cloud", cloud?.kind == .cloud)
+        check("uuid ids are local", dock?.kind == .local)
+
+        let urlSkipRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pier-url-\(UUID().uuidString)", isDirectory: true)
+        writeTranscript(
+            root: urlSkipRoot,
+            slug: "Users-me-Development-dock",
+            id: "skip-url",
+            body: """
+            {"role":"user","message":"<user_query>\\nhttps://dockset.app\\nWhat should Pier show?</user_query>"}
+            {"role":"assistant"}
+            """,
+            written: now
         )
-        check("stale session is quiet", stale.count == 1 && stale[0].isWorking == false)
+        let urlSkip = tile(projectsRoot: urlSkipRoot, now: now)
+        check("title skips a leading URL", urlSkip.caption == "What should Pier show?")
+        try? FileManager.default.removeItem(at: urlSkipRoot)
+
+        check("quiet caption", tile(running: false, projectsRoot: emptyRoot, now: now).caption == "Quiet")
+
+        let endedRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pier-ended-\(UUID().uuidString)", isDirectory: true)
+        writeTranscript(
+            root: endedRoot,
+            slug: "Users-me-Development-dock",
+            id: "ended",
+            body: """
+            {"role":"user","message":"<user_query>\\nBuild the dock overlay\\n</user_query>"}
+            {"type":"turn_ended","status":"success"}
+            """,
+            written: now
+        )
+        let ended = tile(projectsRoot: endedRoot, now: now)
+        check("ended turn is quiet", ended.caption == "Quiet" && ended.working.isEmpty && ended.sessions.count == 1)
+        try? FileManager.default.removeItem(at: endedRoot)
+
+        let stale = tile(projectsRoot: root, now: now.addingTimeInterval(400))
+        check("stale session is quiet", stale.caption == "Quiet" && stale.sessions.contains { $0.id == "aaaa" && $0.isWorking == false })
         try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: emptyRoot)
 
         if let screen = NSScreen.main {
             let hidden = NativeDock.origin(for: NSSize(width: 100, height: 72), on: screen, hidingSystemDock: true)
