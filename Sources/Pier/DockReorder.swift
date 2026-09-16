@@ -29,6 +29,14 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
 
     static let standard: [WidgetKind] = [.cursor, .grokBot, .calendar, .weather]
 
+    var isInstalled: Bool {
+        NativeDock.application(bundleID: bundleID, fallbackName: fallbackName) != nil
+    }
+
+    static var installed: Set<WidgetKind> {
+        Set(standard.filter(\.isInstalled))
+    }
+
     static func hosting(bundleID: String) -> WidgetKind? {
         standard.first { $0.bundleID == bundleID }
     }
@@ -73,7 +81,8 @@ enum StripItem: Equatable, Identifiable, Codable {
     static func normalized(
         _ items: [StripItem],
         apps: [PinnedApp],
-        iconOnly: Set<WidgetKind> = []
+        iconOnly: Set<WidgetKind> = [],
+        installed: Set<WidgetKind> = WidgetKind.installed
     ) -> [StripItem] {
         let appIDs = Set(apps.map(\.bundleID))
         var seenApp = Set<String>()
@@ -85,6 +94,7 @@ enum StripItem: Equatable, Identifiable, Codable {
                 guard appIDs.contains(bundleID), seenApp.insert(bundleID).inserted else { continue }
                 result.append(item)
             case .widget(let kind):
+                guard installed.contains(kind) else { continue }
                 if iconOnly.contains(kind) {
                     guard appIDs.contains(kind.bundleID), seenApp.insert(kind.bundleID).inserted else { continue }
                     result.append(.app(kind.bundleID))
@@ -97,7 +107,9 @@ enum StripItem: Equatable, Identifiable, Codable {
         for app in apps where seenApp.insert(app.bundleID).inserted {
             result.append(.app(app.bundleID))
         }
-        for kind in WidgetKind.standard where !iconOnly.contains(kind) && seenWidget.insert(kind).inserted {
+        for kind in WidgetKind.standard
+            where installed.contains(kind) && !iconOnly.contains(kind) && seenWidget.insert(kind).inserted
+        {
             result.append(.widget(kind))
         }
         return foldingAppsCoveredByWidgets(result, iconOnly: iconOnly)

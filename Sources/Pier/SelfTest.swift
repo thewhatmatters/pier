@@ -253,9 +253,10 @@ enum SelfTest {
         let safari = PinnedApp(bundleID: "com.apple.Safari", name: "Safari", path: "/Applications/Safari.app")
         let mail = PinnedApp(bundleID: "com.apple.mail", name: "Mail", path: "/System/Applications/Mail.app")
         let mixed: [StripItem] = [.app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather)]
+        let allWidgets = Set(WidgetKind.standard)
         check(
             "strip keeps interleave and fills widgets",
-            StripItem.normalized(mixed, apps: [safari, mail]) == [
+            StripItem.normalized(mixed, apps: [safari, mail], installed: allWidgets) == [
                 .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.grokBot), .widget(.calendar)
             ]
         )
@@ -264,7 +265,8 @@ enum SelfTest {
             "widget swallows its own app pin",
             StripItem.normalized(
                 [.app(cursor.bundleID), .widget(.cursor), .app(safari.bundleID)],
-                apps: [cursor, safari]
+                apps: [cursor, safari],
+                installed: allWidgets
             ) == [.widget(.cursor), .app(safari.bundleID), .widget(.grokBot), .widget(.calendar), .widget(.weather)]
         )
         check("cursor widget hosts Cursor", WidgetKind.cursor.bundleID == NativeDock.cursorBundleID)
@@ -281,8 +283,17 @@ enum SelfTest {
             StripItem.normalized(
                 [.widget(.calendar), .app(safari.bundleID)],
                 apps: [calendarApp, safari],
-                iconOnly: [.calendar]
+                iconOnly: [.calendar],
+                installed: allWidgets
             ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.grokBot), .widget(.weather)]
+        )
+        check(
+            "missing host app hides its widget",
+            StripItem.normalized(
+                [.widget(.cursor), .widget(.grokBot), .widget(.calendar), .app(safari.bundleID)],
+                apps: [safari],
+                installed: [.calendar]
+            ) == [.widget(.calendar), .app(safari.bundleID)]
         )
         let calendarController = AppMenuController(app: calendarApp)
         let calendarMenu = AppIconMenu.make(app: calendarApp, running: false, controller: calendarController)

@@ -170,6 +170,14 @@ final class Settings: ObservableObject {
         weatherPlaces.remove(at: index)
     }
 
+    func syncAvailableWidgets() {
+        let next = StripItem.normalized(stripOrder, apps: pinnedApps, iconOnly: Set(iconOnlyWidgets))
+        if next != stripOrder {
+            stripOrder = next
+            NotificationCenter.default.post(name: .pierNeedsLayout, object: nil)
+        }
+    }
+
     func setIconOnly(_ kind: WidgetKind, _ iconOnly: Bool) {
         var only = Set(iconOnlyWidgets)
         if iconOnly {

@@ -79,6 +79,7 @@ final class Store: ObservableObject {
     }
 
     func refresh() {
+        Settings.shared.syncAvailableWidgets()
         if Date().timeIntervalSince(lastWeatherFetch) > Pulse.weather {
             weatherTask = Task { await refreshWeather() }
         }
