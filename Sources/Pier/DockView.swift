@@ -253,7 +253,6 @@ private struct AppTile: View {
                     .allowsHitTesting(false)
                 }
             }
-            .help(DockBadge.help(appName: app.name, raw: badge))
     }
 }
 

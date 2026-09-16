@@ -239,7 +239,39 @@ final class TileClickCatcher: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            )
+        )
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard DockReorder.shared.draggingID == nil,
+              let title = DockTip.title(app: app, kind: kind),
+              let anchor = tipAnchor()
+        else { return }
+        DockTipController.shared.enter(
+            id: tipID,
+            title: title,
+            icon: anchor.icon,
+            barTop: anchor.barTop,
+            screen: anchor.screen
+        )
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        DockTipController.shared.leave(id: tipID)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        DockTipController.shared.hide()
         if event.modifierFlags.contains(.control) {
             pop(event)
             return
@@ -269,6 +301,7 @@ final class TileClickCatcher: NSView {
                 let dy = next.locationInWindow.y - start.y
                 if !dragging && hypot(dx, dy) > 8 {
                     dragging = true
+                    DockTipController.shared.hide()
                     onDragBegin()
                 }
                 if dragging {
@@ -345,6 +378,20 @@ final class TileClickCatcher: NSView {
         let city = Store.shared.snapshot.weather?.city
         remove.isEnabled = Settings.shared.weatherPlaces.contains { $0.name == city }
         menu.addItem(remove)
+    }
+
+    private var tipID: String {
+        if let kind { return "widget:\(kind.rawValue)" }
+        if let app { return "app:\(app.bundleID)" }
+        return "tile"
+    }
+
+    private func tipAnchor() -> (icon: NSRect, barTop: CGFloat, screen: NSRect)? {
+        guard let window else { return nil }
+        let icon = window.convertToScreen(convert(bounds, to: nil))
+        let barTop = window.frame.maxY - Settings.shared.metrics.shadowBleed
+        let screen = window.screen?.frame ?? window.frame
+        return (icon, barTop, screen)
     }
 
     static func located(at windowPoint: NSPoint, in window: NSWindow?) -> TileClickCatcher? {

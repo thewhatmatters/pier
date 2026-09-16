@@ -25,9 +25,10 @@ open ~/Applications/Pier.app
 ```
 
 While Pier is running, Apple's Dock is hidden by default (auto-hide plus a
-long hover delay so it does not pop up over our tiles). Quit Pier and the
-previous Dock setting comes back. The menu bar toggle **Hide macOS Dock**
-turns that off if you want both.
+long hover delay so it does not pop up over our tiles). The menu bar extra
+(the half-filled rectangle) has **Quit Pier** — that restores Apple's Dock
+and exits. **Hide macOS Dock** turns the replacement off if you want both
+while Pier stays open.
 
 A copy of the strip appears on every connected display, and follows
 displays as they are plugged in or removed.

@@ -25,6 +25,25 @@ enum NativeDock {
 
     static let replacementAutohideDelay: Double = 1000
 
+    struct Chrome: Equatable {
+        var autohide: Bool
+        var delay: Double
+
+        static var current: Chrome {
+            Chrome(autohide: isAutoHidden, delay: autohideDelay)
+        }
+
+        /// Our hide uses autohide plus a huge reveal delay. Don't treat that
+        /// as the user's own Dock preference if we have to remember after a crash.
+        var isReplacement: Bool {
+            autohide && delay >= NativeDock.replacementAutohideDelay / 2
+        }
+
+        static func remembered(from current: Chrome) -> Chrome {
+            current.isReplacement ? Chrome(autohide: false, delay: 0) : current
+        }
+    }
+
     static func pinnedApps() -> [PinnedApp] {
         let tiles = dockDefaults?.array(forKey: "persistent-apps") ?? []
         var apps: [PinnedApp] = []
@@ -125,6 +144,7 @@ enum NativeDock {
         task.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
         task.arguments = ["Dock"]
         try? task.run()
+        task.waitUntilExit()
     }
 
     private static func applicationPath(bundleID: String, tileData: [String: Any]) -> String {

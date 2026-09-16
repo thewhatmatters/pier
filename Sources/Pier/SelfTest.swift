@@ -342,6 +342,24 @@ enum SelfTest {
         let idleMenu = AppIconMenu.make(app: sample, running: false, controller: controller)
         let idleHide = idleMenu.items.first { $0.title == "Hide" }
         check("hide is disabled while idle", idleHide?.isEnabled == false)
+        let statusTitles = PierStatusMenu.titles()
+        check("status menu can quit Pier", statusTitles.contains(PierStatusMenu.quit))
+        check("status menu can restore the Dock", statusTitles.contains(PierStatusMenu.hideDock))
+        check(
+            "replacement chrome is detected",
+            NativeDock.Chrome(autohide: true, delay: NativeDock.replacementAutohideDelay).isReplacement
+        )
+        check(
+            "remembering skips a live replacement",
+            NativeDock.Chrome.remembered(
+                from: NativeDock.Chrome(autohide: true, delay: NativeDock.replacementAutohideDelay)
+            ) == NativeDock.Chrome(autohide: false, delay: 0)
+        )
+        check(
+            "remembering keeps the user's autohide",
+            NativeDock.Chrome.remembered(from: NativeDock.Chrome(autohide: true, delay: 0.5))
+                == NativeDock.Chrome(autohide: true, delay: 0.5)
+        )
 
         let tz = TimeZone(secondsFromGMT: 0)!
         var calendar = Calendar(identifier: .gregorian)
@@ -419,6 +437,24 @@ enum SelfTest {
         check("badge caps at 99+", DockBadge.mark(from: "375") == .count("99+"))
         check("badge accepts a dot", DockBadge.mark(from: "•") == .dot)
         check("badge help names unread", DockBadge.help(appName: "Slack", raw: "1") == "Slack — 1 unread")
+        check("app icon tip is the name", DockTip.title(app: safari, kind: nil) == "Safari")
+        check("widget has no name tip yet", DockTip.title(app: safari, kind: .calendar) == nil)
+        check("empty app name has no tip", DockTip.title(app: PinnedApp(bundleID: "x", name: "  ", path: "/"), kind: nil) == nil)
+        check("tip waits before showing", DockTip.delay > 0)
+        check("tip is wide enough for Slack", DockTip.labelSize(title: "Slack").width >= 56)
+        let icon = NSRect(x: 200, y: 40, width: 36, height: 36)
+        let screen = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let tip = DockTip.frame(labelSize: NSSize(width: 80, height: 24), icon: icon, barTop: 90, screen: screen)
+        check("tip window leaves shadow room", tip.width == 80 + DockTip.bleed * 2)
+        check("tip sits above the bar", tip.minY + DockTip.bleed == 90 + DockTip.gap)
+        check("tip centers on the icon", tip.midX == icon.midX)
+        let edge = DockTip.frame(
+            labelSize: NSSize(width: 80, height: 24),
+            icon: NSRect(x: 0, y: 40, width: 20, height: 36),
+            barTop: 90,
+            screen: screen
+        )
+        check("tip stays on screen", edge.minX == 8)
         let slackQuiet = """
         {"webapp":{"teams":{"T1":{"unreads":{"unreadHighlights":0,"unreads":3,"showBullet":true}}}}}
         """.data(using: .utf8)!

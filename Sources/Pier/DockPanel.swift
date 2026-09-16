@@ -186,6 +186,7 @@ final class DockPanel {
         for instance in instances {
             if occupied.contains(instance.displayID) {
                 if instance.window.isVisible {
+                    DockTipController.shared.hide()
                     instance.window.orderOut(nil)
                 }
             } else if !instance.window.isVisible {

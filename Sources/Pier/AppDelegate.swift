@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let panel = DockPanel()
     private var layoutObserver: NSObjectProtocol?
@@ -40,82 +40,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             accessibilityDescription: "Pier")
         image?.isTemplate = true
         button.image = image
-        button.target = self
-        button.action = #selector(statusItemClicked(_:))
-        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-    }
-
-    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        showMenu(from: sender)
-    }
-
-    private func showMenu(from button: NSStatusBarButton) {
+        button.toolTip = "Pier"
         let menu = NSMenu()
-
-        let hide = NSMenuItem(
-            title: "Hide macOS Dock",
-            action: #selector(toggleSystemDock),
-            keyEquivalent: ""
-        )
-        hide.target = self
-        hide.state = Settings.shared.hideSystemDock ? .on : .off
-        menu.addItem(hide)
-
-        let login = NSMenuItem(
-            title: "Open at Login",
-            action: #selector(toggleLoginItem),
-            keyEquivalent: ""
-        )
-        login.target = self
-        login.state = LoginItem.isEnabled ? .on : .off
-        menu.addItem(login)
-
-        let dark = NSMenuItem(
-            title: "Dark Mode",
-            action: #selector(toggleAppearance),
-            keyEquivalent: ""
-        )
-        dark.target = self
-        dark.state = Settings.shared.appearance == .dark ? .on : .off
-        menu.addItem(dark)
-
-        if !DockBadge.isAccessTrusted {
-            let badges = NSMenuItem(
-                title: "Allow Messages Badges…",
-                action: #selector(allowBadgeAccess),
-                keyEquivalent: ""
-            )
-            badges.target = self
-            menu.addItem(badges)
-        }
-
-        menu.addItem(.separator())
-
-        let quit = NSMenuItem(title: "Quit Pier", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-
+        menu.delegate = self
         statusItem.menu = menu
-        button.performClick(nil)
-        statusItem.menu = nil
     }
 
-    @objc private func toggleSystemDock() {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        PierStatusMenu.populate(
+            menu,
+            hideDock: Settings.shared.hideSystemDock,
+            openAtLogin: LoginItem.isEnabled,
+            darkMode: Settings.shared.appearance == .dark,
+            needsBadgeAccess: !DockBadge.isAccessTrusted,
+            target: self
+        )
+    }
+
+    @objc func toggleSystemDock() {
         Settings.shared.hideSystemDock.toggle()
         applySystemDockPreference()
         panel.layout()
     }
 
-    @objc private func toggleLoginItem() {
+    @objc func toggleLoginItem() {
         LoginItem.set(!LoginItem.isEnabled)
     }
 
-    @objc private func toggleAppearance() {
+    @objc func toggleAppearance() {
         Settings.shared.appearance = Settings.shared.appearance == .dark ? .light : .dark
         panel.applyAppearance()
     }
 
-    @objc private func allowBadgeAccess() {
+    @objc func allowBadgeAccess() {
         DockBadge.requestAccessFromUser()
         if !DockBadge.isAccessTrusted {
             DockBadge.openAccessSettings()
@@ -123,7 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Store.shared.refresh()
     }
 
-    @objc private func quit() {
+    @objc func quitPier() {
+        restoreSystemDockIfNeeded()
         NSApp.terminate(nil)
     }
 
@@ -141,12 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func rememberSystemDock() {
-        if Settings.shared.previousSystemDockAutohide == nil {
-            Settings.shared.previousSystemDockAutohide = NativeDock.isAutoHidden
-        }
-        if Settings.shared.previousSystemDockAutohideDelay == nil {
-            Settings.shared.previousSystemDockAutohideDelay = NativeDock.autohideDelay
-        }
+        guard Settings.shared.previousSystemDockAutohide == nil else { return }
+        let remembered = NativeDock.Chrome.remembered(from: .current)
+        Settings.shared.previousSystemDockAutohide = remembered.autohide
+        Settings.shared.previousSystemDockAutohideDelay = remembered.delay
     }
 
     private func restoreSystemDockIfNeeded() {
