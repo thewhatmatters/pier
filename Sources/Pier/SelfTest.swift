@@ -431,9 +431,30 @@ enum SelfTest {
         check("docker strips a leading slash", dockerSnap.containers.contains { $0.id == "db" && $0.name == "postgres" })
         check("docker takes the first name", dockerSnap.containers.contains { $0.id == "cache" && $0.name == "redis" })
         check("docker running containers lead", dockerSnap.containers.map(\.id) == ["cache", "api", "db"])
-        check("docker running caption is last started", dockerSnap.containers.first { $0.id == "api" }?.caption == "Started 2h ago")
+        check("docker running caption is uptime", dockerSnap.containers.first { $0.id == "api" }?.caption == "Up 2h")
+        check("docker prefers running-for over created-at", Docker.snapshot(
+            from: Data("""
+            {"ID":"old","Names":"app","State":"running","RunningFor":"4 hours ago","Status":"Up 4 hours","CreatedAt":"2026-05-16 12:00:00 +0000 UTC"}
+            """.utf8),
+            now: dockerNow,
+            available: true
+        ).selected?.caption == "Up 4h")
         check("docker stopped caption stays stopped", dockerSnap.containers.first { $0.id == "db" }?.caption == "Stopped")
-        check("docker just-started caption", Docker.caption(running: true, startedAt: dockerNow.addingTimeInterval(-20), runningFor: nil, now: dockerNow) == "Started just now")
+        check("docker just-started caption", Docker.caption(running: true, startedAt: dockerNow.addingTimeInterval(-20), runningFor: nil, now: dockerNow) == "Up just now")
+        let dockerPin = PinnedApp(
+            bundleID: "com.docker.docker-desktop",
+            name: "Docker Desktop",
+            path: "/Applications/Docker.app"
+        )
+        check(
+            "docker widget swallows a Desktop pin",
+            StripItem.normalized(
+                [.app(dockerPin.bundleID), .widget(.docker), .app(safari.bundleID)],
+                apps: [dockerPin, safari],
+                installed: [.docker]
+            ) == [.widget(.docker), .app(safari.bundleID)]
+        )
+        check("docker desktop is a host app", Docker.isHost(dockerPin))
         check("docker engine-off caption", DockerSnapshot.empty.caption == "Engine off")
         check("docker cycle wraps", Docker.cycleIndex(2, count: 3, by: 1) == 0)
         check("docker selected headline is the name", dockerSnap.selected?.headline == "redis")

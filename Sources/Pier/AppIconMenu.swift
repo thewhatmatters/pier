@@ -15,11 +15,11 @@ final class AppMenuController: NSObject {
     @objc func reveal() { AppLaunch.reveal(app) }
     @objc func remove() { Settings.shared.removePinned(app) }
     @objc func showAsIcon() {
-        guard let kind = WidgetKind.hosting(bundleID: app.bundleID) else { return }
+        guard let kind = WidgetKind.hosting(app) else { return }
         Settings.shared.setIconOnly(kind, true)
     }
     @objc func showAsWidget() {
-        guard let kind = WidgetKind.hosting(bundleID: app.bundleID) else { return }
+        guard let kind = WidgetKind.hosting(app) else { return }
         Settings.shared.setIconOnly(kind, false)
     }
 }
@@ -61,7 +61,7 @@ enum AppIconMenu {
         reveal.target = controller
         menu.addItem(reveal)
 
-        if let kind = WidgetKind.hosting(bundleID: app.bundleID) {
+        if let kind = WidgetKind.hosting(app) {
             menu.addItem(.separator())
             let collapsed = Settings.shared.iconOnlyWidgets.contains(kind)
             let presentation = NSMenuItem(

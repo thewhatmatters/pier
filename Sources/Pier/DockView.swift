@@ -21,7 +21,7 @@ struct DockView: View {
     }
 
     private var visibleStrip: [StripItem] {
-        StripItem.foldingAppsCoveredByWidgets(stripOrder)
+        StripItem.foldingAppsCoveredByWidgets(stripOrder, apps: snapshot.apps)
     }
 
     private func hostApp(for kind: WidgetKind) -> PinnedApp? {

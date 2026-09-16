@@ -111,7 +111,7 @@ enum Theme {
         }
 
         func windowSize(items: [StripItem], maxWidth: CGFloat) -> NSSize {
-            let visible = StripItem.foldingAppsCoveredByWidgets(items)
+            let visible = StripItem.foldingAppsCoveredByWidgets(items, apps: Settings.shared.pinnedApps)
             let width = min(stripWidth(items: visible) + shadowBleed * 2, maxWidth)
             return NSSize(width: width, height: dockHeight + shadowBleed * 2)
         }

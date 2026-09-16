@@ -221,7 +221,9 @@ struct DockRoot: View {
             stripOrder: settings.stripOrder
         )
         .frame(
-            width: settings.metrics.stripWidth(items: StripItem.foldingAppsCoveredByWidgets(settings.stripOrder)),
+            width: settings.metrics.stripWidth(
+                items: StripItem.foldingAppsCoveredByWidgets(settings.stripOrder, apps: settings.pinnedApps)
+            ),
             height: settings.metrics.dockHeight
         )
         .animation(Theme.layoutAnimation, value: settings.stripOrder)

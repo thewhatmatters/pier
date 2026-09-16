@@ -1,10 +1,22 @@
 import Foundation
 
 /// Containers from `docker ps -a --format '{{json .}}'`.
-/// Headline is the container name. Caption is last started only while
-/// the container is running — stopped pages say Stopped.
+/// Headline is the container name. Caption is how long a running
+/// container has been up (`RunningFor` / `Status`), not CreatedAt.
 enum Docker {
     static let desktopBundleID = "com.docker.docker"
+    static let hostBundleIDs: Set<String> = [
+        "com.docker.docker",
+        "com.docker.docker-desktop",
+        "com.electron.dockerdesktop"
+    ]
+
+    static func isHost(_ app: PinnedApp) -> Bool {
+        if hostBundleIDs.contains(app.bundleID) { return true }
+        let name = app.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.compare("Docker", options: .caseInsensitive) == .orderedSame
+            || name.compare("Docker Desktop", options: .caseInsensitive) == .orderedSame
+    }
 
     static func cliURL(
         fileManager: FileManager = .default,
@@ -65,17 +77,65 @@ enum Docker {
         return first.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
     }
 
-    static func caption(running: Bool, startedAt: Date?, runningFor: String?, now: Date) -> String {
+    static func caption(
+        running: Bool,
+        startedAt: Date?,
+        runningFor: String?,
+        status: String? = nil,
+        now: Date
+    ) -> String {
         guard running else { return "Stopped" }
-        if let startedAt {
-            return "Started \(relative(startedAt, now: now))"
+        if let uptime = uptime(runningFor: runningFor, status: status) {
+            return uptime
         }
-        if let runningFor, !runningFor.isEmpty {
-            let trimmed = runningFor.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.lowercased().hasPrefix("started") { return trimmed }
-            return "Started \(trimmed)"
+        if let startedAt {
+            return "Up \(relative(startedAt, now: now))"
         }
         return "Running"
+    }
+
+    static func uptime(runningFor: String?, status: String?) -> String? {
+        if let status {
+            let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.lowercased().hasPrefix("up ") {
+                let rest = trimmed.dropFirst(3)
+                let bare = rest.split(separator: "(").first.map(String.init) ?? String(rest)
+                return "Up \(compactDuration(bare))"
+            }
+        }
+        if let runningFor {
+            let trimmed = runningFor.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return "Up \(compactDuration(trimmed))"
+            }
+        }
+        return nil
+    }
+
+    static func compactDuration(_ raw: String) -> String {
+        let lower = raw
+            .lowercased()
+            .replacingOccurrences(of: " ago", with: "")
+            .replacingOccurrences(of: "about ", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if lower.contains("second") { return "just now" }
+        if let number = firstNumber(in: lower) {
+            if lower.contains("month") { return "\(number)mo" }
+            if lower.contains("week") { return "\(number)w" }
+            if lower.contains("day") { return "\(number)d" }
+            if lower.contains("hour") { return "\(number)h" }
+            if lower.contains("minute") { return "\(number)m" }
+        }
+        if lower.contains("minute") { return "1m" }
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func firstNumber(in text: String) -> Int? {
+        var digits = ""
+        for character in text where character.isNumber {
+            digits.append(character)
+        }
+        return digits.isEmpty ? nil : Int(digits)
     }
 
     static func relative(_ date: Date, now: Date) -> String {
@@ -136,14 +196,20 @@ enum Docker {
         let state = string(row["State"]).lowercased()
         let running = state == "running" || bool(row["Running"])
         let startedAt = parseDate(string(row["StartedAt"]).nilIfEmpty)
-            ?? parseDate(string(row["CreatedAt"]).nilIfEmpty)
         let runningFor = string(row["RunningFor"]).nilIfEmpty
+        let status = string(row["Status"]).nilIfEmpty
         return DockerContainer(
             id: id,
             name: name,
             running: running,
             startedAt: startedAt,
-            caption: caption(running: running, startedAt: startedAt, runningFor: runningFor, now: now)
+            caption: caption(
+                running: running,
+                startedAt: startedAt,
+                runningFor: runningFor,
+                status: status,
+                now: now
+            )
         )
     }
 

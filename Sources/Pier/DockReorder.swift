@@ -41,8 +41,19 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         Set(standard.filter(\.isInstalled))
     }
 
+    var hostBundleIDs: Set<String> {
+        switch self {
+        case .docker: return Docker.hostBundleIDs
+        default: return [bundleID]
+        }
+    }
+
     static func hosting(bundleID: String) -> WidgetKind? {
-        standard.first { $0.bundleID == bundleID }
+        standard.first { $0.hostBundleIDs.contains(bundleID) }
+    }
+
+    static func hosting(_ app: PinnedApp) -> WidgetKind? {
+        hosting(bundleID: app.bundleID) ?? (Docker.isHost(app) ? .docker : nil)
     }
 
     static func normalized(_ order: [WidgetKind]) -> [WidgetKind] {
@@ -116,18 +127,25 @@ enum StripItem: Equatable, Identifiable, Codable {
         {
             result.append(.widget(kind))
         }
-        return foldingAppsCoveredByWidgets(result, iconOnly: iconOnly)
+        return foldingAppsCoveredByWidgets(result, apps: apps, iconOnly: iconOnly)
     }
 
     /// An expanded host pin is the widget, not a second icon.
     static func foldingAppsCoveredByWidgets(
         _ items: [StripItem],
+        apps: [PinnedApp] = [],
         iconOnly: Set<WidgetKind> = []
     ) -> [StripItem] {
-        let claimed = Set(items.compactMap { item -> String? in
-            if case .widget(let kind) = item, !iconOnly.contains(kind) { return kind.bundleID }
-            return nil
-        })
+        var claimed = Set<String>()
+        for item in items {
+            guard case .widget(let kind) = item, !iconOnly.contains(kind) else { continue }
+            claimed.formUnion(kind.hostBundleIDs)
+            if kind == .docker {
+                for app in apps where Docker.isHost(app) {
+                    claimed.insert(app.bundleID)
+                }
+            }
+        }
         return items.filter { item in
             guard case .app(let bundleID) = item else { return true }
             return !claimed.contains(bundleID)
@@ -187,7 +205,10 @@ final class DockReorder: ObservableObject {
     private var metrics = Theme.metrics(tileSize: Theme.defaultTileSize)
 
     func begin(item: StripItem, metrics: Theme.Metrics) {
-        origin = StripItem.foldingAppsCoveredByWidgets(Settings.shared.stripOrder)
+        origin = StripItem.foldingAppsCoveredByWidgets(
+            Settings.shared.stripOrder,
+            apps: Settings.shared.pinnedApps
+        )
         startIndex = origin.firstIndex(of: item) ?? 0
         self.metrics = metrics
         draggingID = item.id
