@@ -1,8 +1,10 @@
 import AppKit
+import ApplicationServices
 import EventKit
 
 enum AppLaunch {
     static func open(_ app: PinnedApp) {
+        restoreMiniaturizedWindows(bundleID: app.bundleID)
         let url = app.url
         if FileManager.default.fileExists(atPath: url.path) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
@@ -10,6 +12,28 @@ enum AppLaunch {
         }
         if let resolved = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleID) {
             NSWorkspace.shared.openApplication(at: resolved, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    /// Apple still miniaturizes into the hidden system Dock. Clicking Pier
+    /// has to lift those windows back out, or they stay in a dock that is gone.
+    static func restoreMiniaturizedWindows(bundleID: String) {
+        guard AXIsProcessTrusted() else { return }
+        guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
+              !running.isTerminated
+        else { return }
+        let app = AXUIElementCreateApplication(running.processIdentifier)
+        var windows: AnyObject?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows) == .success,
+              let list = windows as? [AXUIElement]
+        else { return }
+        let minimized = kAXMinimizedAttribute as CFString
+        for window in list {
+            var value: AnyObject?
+            guard AXUIElementCopyAttributeValue(window, minimized, &value) == .success,
+                  (value as? Bool) == true
+            else { continue }
+            AXUIElementSetAttributeValue(window, minimized, kCFBooleanFalse)
         }
     }
 

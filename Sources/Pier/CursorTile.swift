@@ -91,13 +91,22 @@ struct CursorSnapshot: Equatable {
     var working: [AgentSession] { sessions.filter(\.isWorking) }
     var attention: Bool { !working.isEmpty }
 
+    /// Repos with a live turn, first seen first. Never a leftover prompt.
+    var workingProjects: [String] {
+        var seen = Set<String>()
+        return working.compactMap { session in
+            seen.insert(session.project).inserted ? session.project : nil
+        }
+    }
+
     var caption: String {
-        switch working.count {
+        let repos = workingProjects
+        switch repos.count {
         case 0: return "Quiet"
-        case 1: return working[0].name
+        case 1: return repos[0]
         default:
-            let joined = working.map(\.name).joined(separator: ", ")
-            return joined.count <= 28 ? joined : "\(working.count) agents"
+            let joined = repos.joined(separator: ", ")
+            return joined.count <= 28 ? joined : "\(repos.count) repos"
         }
     }
 
@@ -115,7 +124,7 @@ struct CursorSnapshot: Equatable {
         } else {
             lines.append(contentsOf: working.map { session in
                 let kind = session.kind == .cloud ? "cloud" : "local"
-                return "\(session.name) · \(session.project) · \(kind)"
+                return "\(session.project) · \(kind)"
             })
         }
         return lines.joined(separator: "\n")
@@ -135,7 +144,7 @@ struct AgentSession: Equatable, Identifiable {
     var updatedAt: Date
     var isWorking: Bool
 
-    var name: String { title.isEmpty ? project : title }
+    var name: String { project }
 }
 
 // MARK: - Host app / title
@@ -296,8 +305,6 @@ private enum Host {
 // MARK: - Transcripts
 
 private enum Transcripts {
-    private static var titleCache: [String: (Date, String)] = [:]
-
     static func scan(now: Date, projectsRoot: URL) -> [AgentSession] {
         let fm = FileManager.default
         guard let projects = try? fm.contentsOfDirectory(
@@ -323,7 +330,7 @@ private enum Transcripts {
                 sessions.append(AgentSession(
                     id: id,
                     project: project,
-                    title: working ? title(for: group, fallback: project, written: latest.date) : project,
+                    title: project,
                     kind: id.hasPrefix("bc-") ? .cloud : .local,
                     updatedAt: latest.date,
                     isWorking: working
@@ -346,65 +353,6 @@ private enum Transcripts {
         guard now.timeIntervalSince(written) <= CursorTile.workingWindow else { return false }
         if lastEvent?["type"] as? String == "turn_ended" { return false }
         return true
-    }
-
-    private static func title(fromTranscriptPrefix text: String) -> String? {
-        guard
-            let start = text.range(of: "<user_query>"),
-            let end = text.range(of: "</user_query>", range: start.upperBound..<text.endIndex)
-        else { return nil }
-
-        let query = unescape(String(text[start.upperBound..<end.lowerBound]))
-        let line = query
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !isNoise($0) }
-        guard let line, !line.isEmpty else { return nil }
-        return shorten(line)
-    }
-
-    private static func unescape(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: "\\n", with: "\n")
-            .replacingOccurrences(of: "\\r", with: "\r")
-            .replacingOccurrences(of: "\\t", with: "\t")
-    }
-
-    private static func isNoise(_ line: String) -> Bool {
-        if line.isEmpty { return true }
-        if line == "[Image]" { return true }
-        if line.hasPrefix("<timestamp") { return true }
-        if line.hasPrefix("<image_files>") { return true }
-        if line.hasPrefix("http://") || line.hasPrefix("https://") || line.hasPrefix("www.") {
-            return true
-        }
-        return false
-    }
-
-    private static func shorten(_ text: String, limit: Int = 36) -> String {
-        let collapsed = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        if collapsed.count <= limit { return collapsed }
-        let end = collapsed.index(collapsed.startIndex, offsetBy: limit - 1)
-        return String(collapsed[..<end]) + "…"
-    }
-
-    private static func title(for group: URL, fallback: String, written: Date) -> String {
-        let key = group.path
-        if let cached = titleCache[key], cached.0 == written {
-            return cached.1
-        }
-        let file = group.appendingPathComponent("\(group.lastPathComponent).jsonl")
-        let resolved = title(from: file) ?? fallback
-        titleCache[key] = (written, resolved)
-        return resolved
-    }
-
-    private static func title(from url: URL) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        let data = handle.readData(ofLength: 12_000)
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
-        return title(fromTranscriptPrefix: text)
     }
 
     private static func lastEvent(in url: URL) -> [String: Any]? {

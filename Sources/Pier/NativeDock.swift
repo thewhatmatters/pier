@@ -88,8 +88,8 @@ enum NativeDock {
     }
 
     /// Bottom-left origin for a dock of `size` on `screen`.
-    /// Sits on the physical bottom when we have hidden Apple's Dock;
-    /// otherwise stacks just above the space macOS already reserved.
+    /// Floats `screenInset` above the display edge when we have hidden
+    /// Apple's Dock; otherwise stacks just above the space macOS reserved.
     static func origin(for size: NSSize, on screen: NSScreen, hidingSystemDock: Bool) -> NSPoint {
         let y: CGFloat
         if hidingSystemDock {

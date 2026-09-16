@@ -130,11 +130,14 @@ enum SelfTest {
         check("working session detected", dock?.isWorking == true && dock?.project == "dock")
         check("project label sits on the same snapshot", working.label == "dock" && working.attention)
         check("cursor live when an agent works", working.attention && working.caption != "Quiet")
-        check("working session has a title", dock?.title == "Build the dock overlay")
+        check("working caption lists repos", working.caption == "3 repos")
         check("slug studio", cloud?.project == "whatmatters-studio")
         check("slug without marker", urlOnly?.project == "empty-window")
-        check("title from first prompt", cloud?.title == "Fold agents into Cursor")
-        check("URL-only prompt falls back to project", urlOnly?.isWorking == true && urlOnly?.title == "empty-window")
+        check(
+            "working repos stay unique",
+            working.workingProjects == ["dock", "whatmatters-studio", "empty-window"]
+        )
+        check("URL-only prompt is still the repo", urlOnly?.isWorking == true && urlOnly?.title == "empty-window")
         check("cloud ids are marked cloud", cloud?.kind == .cloud)
         check("uuid ids are local", dock?.kind == .local)
 
@@ -151,7 +154,7 @@ enum SelfTest {
             written: now
         )
         let urlSkip = tile(projectsRoot: urlSkipRoot, now: now)
-        check("title skips a leading URL", urlSkip.caption == "What should Pier show?")
+        check("caption is the repo not a prompt", urlSkip.caption == "dock")
         try? FileManager.default.removeItem(at: urlSkipRoot)
 
         check("quiet caption", tile(running: false, projectsRoot: emptyRoot, now: now).caption == "Quiet")
@@ -181,6 +184,7 @@ enum SelfTest {
             let hidden = NativeDock.origin(for: NSSize(width: 100, height: 72), on: screen, hidingSystemDock: true)
             let shown = NativeDock.origin(for: NSSize(width: 100, height: 72), on: screen, hidingSystemDock: false)
             check("hidden dock sits on screen edge", hidden.y == (screen.frame.minY + Theme.screenInset).rounded())
+            check("replacement dock is inset 8", Theme.screenInset == 8)
             check("visible dock sits above system dock", shown.y == (screen.visibleFrame.minY + Theme.aboveSystemDock).rounded())
             let expectedX = ((screen.frame.minX + screen.frame.maxX - 100) / 2).rounded()
             check("origin centers on that screen", hidden.x == expectedX)
@@ -415,6 +419,22 @@ enum SelfTest {
         check("badge caps at 99+", DockBadge.mark(from: "375") == .count("99+"))
         check("badge accepts a dot", DockBadge.mark(from: "•") == .dot)
         check("badge help names unread", DockBadge.help(appName: "Slack", raw: "1") == "Slack — 1 unread")
+        let slackQuiet = """
+        {"webapp":{"teams":{"T1":{"unreads":{"unreadHighlights":0,"unreads":3,"showBullet":true}}}}}
+        """.data(using: .utf8)!
+        let slackHot = """
+        {"webapp":{"teams":{"T1":{"unreads":{"unreadHighlights":2,"unreads":2,"showBullet":true}}}}}
+        """.data(using: .utf8)!
+        check("slack highlight is quiet after read", SlackBadge.unreadHighlights(from: slackQuiet) == 0)
+        check("slack highlight keeps mentions", SlackBadge.unreadHighlights(from: slackHot) == 2)
+        var slackLabels = [SlackBadge.bundleID: "1"]
+        SlackBadge.dropQuiet(&slackLabels, state: {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pier-slack-\(UUID().uuidString).json")
+            try? slackQuiet.write(to: url)
+            return url
+        }())
+        check("slack badge drops when highlights are gone", slackLabels[SlackBadge.bundleID] == nil)
         check("messages title maps", DockBadge.bundleID(title: "Messages", url: nil) == AppMarks.messagesBundleID)
         check("imessage title maps", DockBadge.bundleID(title: "iMessage", url: nil) == AppMarks.messagesBundleID)
         let liveBadges = DockBadge.labelsByBundleID()

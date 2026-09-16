@@ -3,7 +3,7 @@ import SwiftUI
 enum Theme {
     static let cornerRadius: CGFloat = 16
     static let widgetRadius: CGFloat = 14
-    static let screenInset: CGFloat = 10
+    static let screenInset: CGFloat = 8
     static let aboveSystemDock: CGFloat = 8
     static let barShadowRadius: CGFloat = 18
     static let barShadowY: CGFloat = 6

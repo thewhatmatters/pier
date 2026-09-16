@@ -7,6 +7,8 @@ import Foundation
 /// Slack and Discord publish Launch Services `StatusLabel`. Messages and
 /// similar system apps do not — those come from the Dock tile's
 /// `AXStatusLabel` once Pier is allowed to control the computer.
+/// Slack's dock number also covers ordinary channel unreads; Pier only
+/// keeps that badge when Slack still has a mention/highlight.
 enum DockBadge {
     enum Mark: Equatable {
         case count(String)
@@ -41,6 +43,7 @@ enum DockBadge {
         for (bundleID, raw) in labelsFromDock() where result[bundleID] == nil {
             result[bundleID] = raw
         }
+        SlackBadge.dropQuiet(&result)
         return result.filter { bundleIDs.contains($0.key) }
     }
 
@@ -49,6 +52,7 @@ enum DockBadge {
         for (bundleID, raw) in labelsFromDock() where result[bundleID] == nil {
             result[bundleID] = raw
         }
+        SlackBadge.dropQuiet(&result)
         return result
     }
 
@@ -208,5 +212,49 @@ enum DockBadge {
               let inner = status["label"] ?? status["Label"]
         else { return nil }
         return label(from: inner)
+    }
+}
+
+enum SlackBadge {
+    static let bundleID = "com.tinyspeck.slackmacgap"
+
+    static var stateURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Slack/storage/root-state.json")
+    }
+
+    static func unreadHighlights(from data: Data) -> Int? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let webapp = root["webapp"] as? [String: Any],
+              let teams = webapp["teams"] as? [String: Any]
+        else { return nil }
+        var total = 0
+        var sawUnreads = false
+        for team in teams.values {
+            guard let team = team as? [String: Any],
+                  let unreads = team["unreads"] as? [String: Any]
+            else { continue }
+            sawUnreads = true
+            total += int(unreads["unreadHighlights"])
+        }
+        return sawUnreads ? total : nil
+    }
+
+    static func dropQuiet(_ labels: inout [String: String], state: URL = stateURL) {
+        guard labels[bundleID] != nil else { return }
+        guard let data = try? Data(contentsOf: state),
+              let highlights = unreadHighlights(from: data)
+        else { return }
+        if highlights == 0 {
+            labels.removeValue(forKey: bundleID)
+        }
+    }
+
+    private static func int(_ value: Any?) -> Int {
+        switch value {
+        case let number as Int: return number
+        case let number as NSNumber: return number.intValue
+        default: return 0
+        }
     }
 }

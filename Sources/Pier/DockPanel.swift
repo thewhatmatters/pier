@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 import SwiftUI
 
 final class DockWindow: NSPanel {
@@ -11,7 +12,7 @@ final class DockWindow: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        level = .floating
+        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)))
         // Stay on every desktop, but not over fullscreen spaces — otherwise
         // the strip sits on video scrubbers and other bottom chrome.
         collectionBehavior = [.canJoinAllSpaces, .stationary]
