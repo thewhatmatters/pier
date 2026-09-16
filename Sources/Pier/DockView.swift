@@ -9,6 +9,7 @@ struct DockView: View {
     var onLaunch: (PinnedApp) -> Void = { _ in }
     var onOpenCursor: () -> Void = {}
     var onOpenGrokBot: () -> Void = {}
+    var onOpenDocker: () -> Void = {}
     var onOpenCalendar: () -> Void = {}
     var onOpenWeather: () -> Void = {}
     var stripOrder: [StripItem] = []
@@ -97,6 +98,17 @@ struct DockView: View {
                 action: onOpenGrokBot,
                 onPrevious: { Store.shared.cycleGrokBot(-1) },
                 onNext: { Store.shared.cycleGrokBot(1) }
+            )
+        case .docker:
+            DockerWidget(
+                snapshot: snapshot.docker,
+                app: hostApp(for: .docker),
+                running: snapshot.runningBundleIDs.contains(WidgetKind.docker.bundleID),
+                metrics: metrics,
+                palette: palette,
+                action: onOpenDocker,
+                onPrevious: { Store.shared.cycleDocker(-1) },
+                onNext: { Store.shared.cycleDocker(1) }
             )
         case .calendar:
             CalendarWidget(
@@ -478,6 +490,60 @@ private struct GrokBotWidget: View {
         let base = snapshot?.help ?? "Open Grok Bot and sign in"
         if snapshot?.canCycle == true {
             return base + "\nClick the arrows to cycle Grok Bots."
+        }
+        return base
+    }
+}
+
+private struct DockerWidget: View {
+    let snapshot: DockerSnapshot?
+    let app: PinnedApp?
+    let running: Bool
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+    var onPrevious: () -> Void = {}
+    var onNext: () -> Void = {}
+
+    var body: some View {
+        WidgetTile(
+            kind: .docker,
+            app: app,
+            running: running,
+            metrics: metrics,
+            palette: palette,
+            action: action,
+            pageCount: snapshot?.pageCount ?? 0,
+            onPrevious: onPrevious,
+            onNext: onNext
+        ) {
+            HStack(spacing: 8) {
+                WidgetAppMark(app: app, systemName: "shippingbox.fill", metrics: metrics, palette: palette)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(snapshot?.headline ?? "Docker")
+                        .font(Typeface.sans(metrics.widgetTemp, weight: .light))
+                        .foregroundStyle(palette.widgetText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text(snapshot?.caption ?? "Engine off")
+                        .font(Typeface.sans(metrics.widgetCaption))
+                        .foregroundStyle(snapshot?.selected?.running == true
+                                         ? palette.widgetLive
+                                         : palette.widgetMuted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.top, -3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .help(cycleHelp)
+    }
+
+    private var cycleHelp: String {
+        let base = snapshot?.help ?? "Open Docker Desktop"
+        if snapshot?.canCycle == true {
+            return base + "\nClick the arrows to cycle containers."
         }
         return base
     }

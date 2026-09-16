@@ -252,8 +252,8 @@ enum SelfTest {
         check("dark and light palettes exist", Theme.Appearance.allCases.count == 2)
         check("halftone renders a symbol", Halftone.image(systemName: "cloud.fill", pointSize: 24).size.width > 0)
         check("calendar day is numeric", Int(AppMarks.calendarDay()) != nil)
-        check("widget order fills missing", WidgetKind.normalized([.weather]) == [.weather, .cursor, .grokBot, .calendar])
-        check("widget order drops dupes", WidgetKind.normalized([.cursor, .cursor, .weather]) == [.cursor, .weather, .grokBot, .calendar])
+        check("widget order fills missing", WidgetKind.normalized([.weather]) == [.weather, .cursor, .grokBot, .docker, .calendar])
+        check("widget order drops dupes", WidgetKind.normalized([.cursor, .cursor, .weather]) == [.cursor, .weather, .grokBot, .docker, .calendar])
         let safari = PinnedApp(bundleID: "com.apple.Safari", name: "Safari", path: "/Applications/Safari.app")
         let mail = PinnedApp(bundleID: "com.apple.mail", name: "Mail", path: "/System/Applications/Mail.app")
         let mixed: [StripItem] = [.app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather)]
@@ -261,7 +261,7 @@ enum SelfTest {
         check(
             "strip keeps interleave and fills widgets",
             StripItem.normalized(mixed, apps: [safari, mail], installed: allWidgets) == [
-                .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.grokBot), .widget(.calendar)
+                .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.grokBot), .widget(.docker), .widget(.calendar)
             ]
         )
         let cursor = PinnedApp(bundleID: NativeDock.cursorBundleID, name: "Cursor", path: "/Applications/Cursor.app")
@@ -271,10 +271,11 @@ enum SelfTest {
                 [.app(cursor.bundleID), .widget(.cursor), .app(safari.bundleID)],
                 apps: [cursor, safari],
                 installed: allWidgets
-            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.grokBot), .widget(.calendar), .widget(.weather)]
+            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.grokBot), .widget(.docker), .widget(.calendar), .widget(.weather)]
         )
         check("cursor widget hosts Cursor", WidgetKind.cursor.bundleID == NativeDock.cursorBundleID)
         check("grok bot widget hosts Grok Bot", WidgetKind.grokBot.bundleID == NativeDock.grokBotBundleID)
+        check("docker widget hosts Docker Desktop", WidgetKind.docker.bundleID == Docker.desktopBundleID)
         check("calendar widget hosts Calendar", WidgetKind.calendar.bundleID == AppMarks.calendarBundleID)
         check("weather widget hosts Weather", WidgetKind.weather.bundleID == "com.apple.weather")
         check(
@@ -289,7 +290,7 @@ enum SelfTest {
                 apps: [calendarApp, safari],
                 iconOnly: [.calendar],
                 installed: allWidgets
-            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.grokBot), .widget(.weather)]
+            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.grokBot), .widget(.docker), .widget(.weather)]
         )
         check(
             "missing host app hides its widget",
@@ -419,6 +420,23 @@ enum SelfTest {
                 == GrokBot.fallbackTintIndex(for: "Social Manager", modulo: 9)
         )
         check("grok cycle wraps", GrokBot.cycleIndex(2, count: 3, by: 1) == 0)
+        let apiStarted = Docker.parseDate("2026-09-16T12:00:00Z")!
+        let dockerNow = apiStarted.addingTimeInterval(2 * 3600)
+        let dockerList = """
+        {"ID":"db","Names":"/postgres","State":"exited","RunningFor":"3 days ago","CreatedAt":"2026-09-13 10:00:00 +0000 UTC"}
+        {"ID":"api","Names":"pier-api","State":"running","RunningFor":"2 hours ago","StartedAt":"2026-09-16T12:00:00Z"}
+        {"ID":"cache","Names":"redis,redis-alias","State":"running","StartedAt":"2026-09-16T13:50:00Z"}
+        """.data(using: .utf8)!
+        let dockerSnap = Docker.snapshot(from: dockerList, now: dockerNow, available: true)
+        check("docker strips a leading slash", dockerSnap.containers.contains { $0.id == "db" && $0.name == "postgres" })
+        check("docker takes the first name", dockerSnap.containers.contains { $0.id == "cache" && $0.name == "redis" })
+        check("docker running containers lead", dockerSnap.containers.map(\.id) == ["cache", "api", "db"])
+        check("docker running caption is last started", dockerSnap.containers.first { $0.id == "api" }?.caption == "Started 2h ago")
+        check("docker stopped caption stays stopped", dockerSnap.containers.first { $0.id == "db" }?.caption == "Stopped")
+        check("docker just-started caption", Docker.caption(running: true, startedAt: dockerNow.addingTimeInterval(-20), runningFor: nil, now: dockerNow) == "Started just now")
+        check("docker engine-off caption", DockerSnapshot.empty.caption == "Engine off")
+        check("docker cycle wraps", Docker.cycleIndex(2, count: 3, by: 1) == 0)
+        check("docker selected headline is the name", dockerSnap.selected?.headline == "redis")
         let grokSnap = GrokBotSnapshot(seats: grokSeats, selectedIndex: 0, signedIn: true)
         check("grok caption working", grokSnap.selected?.caption == "Working")
         check("grok caption needs you", grokSnap.selecting(1).selected?.caption == "Needs you")

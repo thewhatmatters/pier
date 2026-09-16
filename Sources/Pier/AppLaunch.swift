@@ -49,6 +49,12 @@ enum AppLaunch {
         }
     }
 
+    static func openDocker() {
+        if let docker = NativeDock.application(bundleID: Docker.desktopBundleID, fallbackName: "Docker") {
+            open(docker)
+        }
+    }
+
     static func openCalendar() {
         if let calendar = NativeDock.application(bundleID: AppMarks.calendarBundleID, fallbackName: "Calendar") {
             open(calendar)

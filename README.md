@@ -50,6 +50,7 @@ switches to a light bar.
 | --- | --- |
 | Apps | Seeded from your current macOS Dock pins; click to launch or activate. Right-click for Open, Hide, Quit (Option for Force Quit), Show in Finder, and Remove from Pier |
 | Cursor | Running or off, plus the open project. Subtitle lists repos with a live turn under `~/.cursor/projects/*/agent-transcripts` — never the first prompt. The tile refreshes on the dock pulse; transcripts are rescanned at most every ~8s. A session is working until Cursor writes `turn_ended`. Cloud sessions (`bc-` ids) are included when they write locally |
+| Docker | Container name from `docker ps -a`. Subtitle is last started while that container is running, otherwise Stopped. Arrows cycle containers. Hidden if Docker Desktop and the `docker` CLI are both missing. Click opens Docker Desktop |
 | Calendar | Today's events from EventKit. Shows the meeting in progress or the next one, plus how many more. Click opens Calendar.app |
 | Weather | Refreshes every 15 minutes. Prefers Apple Weather via WeatherKit (500k calls/month included with the Developer Program). Location from Core Location, IP if that is denied. Falls back to Open-Meteo until App ID `so.whatmatters.pier` has the WeatherKit capability enabled — that fallback can sit a few degrees off Weather.app. Click opens Weather.app |
 

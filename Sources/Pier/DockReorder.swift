@@ -4,6 +4,7 @@ import SwiftUI
 enum WidgetKind: String, Codable, CaseIterable, Identifiable {
     case cursor
     case grokBot
+    case docker
     case calendar
     case weather
 
@@ -13,6 +14,7 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .cursor: return NativeDock.cursorBundleID
         case .grokBot: return NativeDock.grokBotBundleID
+        case .docker: return Docker.desktopBundleID
         case .calendar: return AppMarks.calendarBundleID
         case .weather: return "com.apple.weather"
         }
@@ -22,15 +24,17 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .cursor: return "Cursor"
         case .grokBot: return "Grok Bot"
+        case .docker: return "Docker"
         case .calendar: return "Calendar"
         case .weather: return "Weather"
         }
     }
 
-    static let standard: [WidgetKind] = [.cursor, .grokBot, .calendar, .weather]
+    static let standard: [WidgetKind] = [.cursor, .grokBot, .docker, .calendar, .weather]
 
     var isInstalled: Bool {
-        NativeDock.application(bundleID: bundleID, fallbackName: fallbackName) != nil
+        if self == .docker, Docker.cliURL() != nil { return true }
+        return NativeDock.application(bundleID: bundleID, fallbackName: fallbackName) != nil
     }
 
     static var installed: Set<WidgetKind> {

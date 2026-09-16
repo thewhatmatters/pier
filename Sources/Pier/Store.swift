@@ -20,6 +20,9 @@ final class Store: ObservableObject {
     private var grokBot = GrokBotSnapshot(seats: [], selectedIndex: 0, signedIn: false)
     private var grokBotIndex = 0
     private var grokAttentionIDs: Set<String> = []
+    private var docker = DockerSnapshot.empty
+    private var dockerIndex = 0
+    private var dockerTask: Task<Void, Never>?
 
     private enum Pulse {
         static let dock: TimeInterval = 3
@@ -67,6 +70,7 @@ final class Store: ObservableObject {
         timer = nil
         weatherTask?.cancel()
         calendarTask?.cancel()
+        dockerTask?.cancel()
     }
 
     @objc private func appsChanged() {
@@ -84,6 +88,7 @@ final class Store: ObservableObject {
             weatherTask = Task { await refreshWeather() }
         }
         refreshGrokBot()
+        refreshDocker()
         if Date().timeIntervalSince(lastCalendarFetch) > Pulse.calendar {
             calendarTask = Task { await refreshCalendar() }
         }
@@ -130,6 +135,28 @@ final class Store: ObservableObject {
         publish()
     }
 
+    func cycleDocker(_ delta: Int) {
+        let count = docker.containers.count
+        guard count > 1 else { return }
+        dockerIndex = Docker.cycleIndex(dockerIndex, count: count, by: delta)
+        docker = docker.selecting(dockerIndex)
+        publish()
+    }
+
+    private func refreshDocker() {
+        dockerTask?.cancel()
+        dockerTask = Task {
+            let next = await Task.detached { Docker.snapshot() }.value
+            guard !Task.isCancelled else { return }
+            let keep = docker.selected.flatMap { current in
+                next.containers.firstIndex(where: { $0.id == current.id })
+            }
+            docker = next.selecting(keep ?? dockerIndex)
+            dockerIndex = docker.selectedIndex
+            publish()
+        }
+    }
+
     func removeCurrentWeatherPlace() {
         guard weatherPages.indices.contains(weatherIndex) else { return }
         let city = weatherPages[weatherIndex].city
@@ -169,7 +196,8 @@ final class Store: ObservableObject {
             calendar: calendar,
             weather: weather,
             weatherCount: weatherPages.count,
-            grokBot: grokBot
+            grokBot: grokBot,
+            docker: docker
         )
         if next != snapshot {
             snapshot = next

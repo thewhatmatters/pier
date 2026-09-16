@@ -24,6 +24,11 @@ if CommandLine.arguments.contains("--status") {
         let ageLabel = age.map { "\($0)s ago" } ?? "unknown"
         print("  - \(seat.name)  \(state)  \(ageLabel)")
     }
+    let docker = Docker.snapshot()
+    print("Docker: \(docker.available ? "engine up" : "engine off")  \(docker.running.count) running / \(docker.containers.count) containers")
+    for container in docker.containers.prefix(8) {
+        print("  - \(container.name)  \(container.caption)")
+    }
     print("Pinned apps: \(Settings.shared.pinnedApps.map(\.name).joined(separator: ", "))")
     let badges = DockBadge.labels(for: Set(Settings.shared.pinnedApps.map(\.bundleID)))
     if badges.isEmpty {

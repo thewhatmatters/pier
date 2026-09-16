@@ -33,6 +33,7 @@ struct DockSnapshot: Equatable {
     var weather: WeatherSnapshot?
     var weatherCount: Int = 1
     var grokBot: GrokBotSnapshot?
+    var docker: DockerSnapshot? = nil
 
     static let empty = DockSnapshot(
         apps: [],
@@ -41,6 +42,7 @@ struct DockSnapshot: Equatable {
         cursor: CursorSnapshot(running: false, project: nil, sessions: []),
         calendar: nil,
         weather: nil,
-        grokBot: nil
+        grokBot: nil,
+        docker: nil
     )
 }
