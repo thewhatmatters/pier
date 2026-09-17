@@ -23,9 +23,13 @@ final class Store: ObservableObject {
     private var docker = DockerSnapshot.empty
     private var dockerIndex = 0
     private var dockerTask: Task<Void, Never>?
+    private var cpu = CPULoadSnapshot.empty
+    private var cpuTicks: CPULoad.Ticks?
+    private var cpuTimer: Timer?
 
     private enum Pulse {
         static let dock: TimeInterval = 3
+        static let cpu: TimeInterval = 1
         static let weather: TimeInterval = 15 * 60
         static let calendar: TimeInterval = 120
     }
@@ -42,8 +46,12 @@ final class Store: ObservableObject {
             name: .EKEventStoreChanged,
             object: nil
         )
+        sampleCPU()
         timer = Timer.scheduledTimer(withTimeInterval: Pulse.dock, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
+        }
+        cpuTimer = Timer.scheduledTimer(withTimeInterval: Pulse.cpu, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sampleCPU() }
         }
         NotificationCenter.default.addObserver(
             self,
@@ -71,6 +79,8 @@ final class Store: ObservableObject {
         weatherTask?.cancel()
         calendarTask?.cancel()
         dockerTask?.cancel()
+        cpuTimer?.invalidate()
+        cpuTimer = nil
     }
 
     @objc private func appsChanged() {
@@ -143,6 +153,15 @@ final class Store: ObservableObject {
         publish()
     }
 
+    private func sampleCPU() {
+        guard let current = CPULoad.ticks() else { return }
+        if let previous = cpuTicks, let sample = CPULoad.sample(previous: previous, current: current) {
+            cpu = cpu.appending(sample)
+            publish()
+        }
+        cpuTicks = current
+    }
+
     private func refreshDocker() {
         dockerTask?.cancel()
         dockerTask = Task {
@@ -197,7 +216,8 @@ final class Store: ObservableObject {
             weather: weather,
             weatherCount: weatherPages.count,
             grokBot: grokBot,
-            docker: docker
+            docker: docker,
+            cpu: cpu
         )
         if next != snapshot {
             snapshot = next

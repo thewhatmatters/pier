@@ -29,6 +29,12 @@ if CommandLine.arguments.contains("--status") {
     for container in docker.containers.prefix(8) {
         print("  - \(container.name)  \(container.caption)")
     }
+    if let previous = CPULoad.ticks() {
+        Thread.sleep(forTimeInterval: 0.2)
+        if let current = CPULoad.ticks(), let sample = CPULoad.sample(previous: previous, current: current) {
+            print("CPU: system \(CPULoad.percent(sample.system))  user \(CPULoad.percent(sample.user))  idle \(CPULoad.percent(sample.idle))")
+        }
+    }
     print("Pinned apps: \(Settings.shared.pinnedApps.map(\.name).joined(separator: ", "))")
     let badges = DockBadge.labels(for: Set(Settings.shared.pinnedApps.map(\.bundleID)))
     if badges.isEmpty {

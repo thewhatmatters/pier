@@ -10,6 +10,7 @@ struct DockView: View {
     var onOpenCursor: () -> Void = {}
     var onOpenGrokBot: () -> Void = {}
     var onOpenDocker: () -> Void = {}
+    var onOpenActivityMonitor: () -> Void = {}
     var onOpenCalendar: () -> Void = {}
     var onOpenWeather: () -> Void = {}
     var stripOrder: [StripItem] = []
@@ -109,6 +110,15 @@ struct DockView: View {
                 action: onOpenDocker,
                 onPrevious: { Store.shared.cycleDocker(-1) },
                 onNext: { Store.shared.cycleDocker(1) }
+            )
+        case .activityMonitor:
+            ActivityMonitorWidget(
+                snapshot: snapshot.cpu,
+                app: hostApp(for: .activityMonitor),
+                running: snapshot.runningBundleIDs.contains(WidgetKind.activityMonitor.bundleID),
+                metrics: metrics,
+                palette: palette,
+                action: onOpenActivityMonitor
             )
         case .calendar:
             CalendarWidget(
@@ -549,6 +559,107 @@ private struct DockerWidget: View {
     }
 }
 
+private struct ActivityMonitorWidget: View {
+    let snapshot: CPULoadSnapshot?
+    let app: PinnedApp?
+    let running: Bool
+    let metrics: Theme.Metrics
+    let palette: Theme.Palette
+    let action: () -> Void
+
+    private var sample: CPULoad.Sample {
+        snapshot?.current ?? CPULoad.Sample(user: 0, system: 0, idle: 100)
+    }
+
+    var body: some View {
+        WidgetTile(
+            kind: .activityMonitor,
+            app: app,
+            running: running,
+            metrics: metrics,
+            palette: palette,
+            action: action
+        ) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: -1) {
+                    cpuRow("System", value: sample.system, color: Color(hex: 0xFF3B30))
+                    cpuRow("User", value: sample.user, color: Color(hex: 0x3D7EFF))
+                    cpuRow("Idle", value: sample.idle, color: palette.widgetMuted)
+                }
+                .frame(minWidth: 72, alignment: .leading)
+                CPULoadChart(
+                    history: snapshot?.history ?? [],
+                    user: Color(hex: 0x3D7EFF),
+                    system: Color(hex: 0xFF3B30)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(.leading, 4)
+        }
+        .help(snapshot?.help ?? "Open Activity Monitor")
+    }
+
+    private func cpuRow(_ title: String, value: Double, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 4, height: 4)
+            Text(title)
+                .font(Typeface.sans(metrics.widgetCaption))
+                .foregroundStyle(palette.widgetMuted)
+            Spacer(minLength: 4)
+            Text(CPULoad.percent(value))
+                .font(Typeface.mono(metrics.widgetCaption, weight: .medium))
+                .foregroundStyle(palette.widgetText)
+                .monospacedDigit()
+        }
+    }
+}
+
+private struct CPULoadChart: View {
+    let history: [CPULoad.Sample]
+    let user: Color
+    let system: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let samples = history
+            guard samples.count > 1, size.width > 1, size.height > 1 else { return }
+            let step = size.width / CGFloat(samples.count - 1)
+            func point(_ index: Int, _ value: Double) -> CGPoint {
+                CGPoint(
+                    x: CGFloat(index) * step,
+                    y: size.height - CGFloat(min(100, max(0, value)) / 100) * size.height
+                )
+            }
+
+            var load = Path()
+            load.move(to: CGPoint(x: 0, y: size.height))
+            for (index, sample) in samples.enumerated() {
+                load.addLine(to: point(index, sample.load))
+            }
+            load.addLine(to: CGPoint(x: size.width, y: size.height))
+            load.closeSubpath()
+            context.fill(load, with: .color(user.opacity(0.28)))
+
+            var loadLine = Path()
+            for (index, sample) in samples.enumerated() {
+                let next = point(index, sample.load)
+                if index == 0 { loadLine.move(to: next) } else { loadLine.addLine(to: next) }
+            }
+            context.stroke(loadLine, with: .color(user.opacity(0.9)), lineWidth: 1)
+
+            var systemLine = Path()
+            for (index, sample) in samples.enumerated() {
+                let next = point(index, sample.system)
+                if index == 0 { systemLine.move(to: next) } else { systemLine.addLine(to: next) }
+            }
+            context.stroke(systemLine, with: .color(system), lineWidth: 1)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 private struct GrokBotAvatar: View {
     let seat: GrokBotSeat
     let size: CGFloat
@@ -882,16 +993,17 @@ private struct WidgetTile<Content: View>: View {
             }
             .overlay(alignment: .bottom) {
                 if running {
-                    let tickWidth = metrics.widgetSlotWidth - metrics.widgetInset * 2
+                    let slotWidth = metrics.itemWidth(.widget(kind))
+                    let tickWidth = slotWidth - metrics.widgetInset * 2
                     ZStack(alignment: .bottom) {
                         RunningSpotlight(
                             metrics: metrics,
                             color: palette.runningDot,
-                            width: metrics.widgetSlotWidth
+                            width: slotWidth
                         )
                         RunningTick(metrics: metrics, color: palette.runningDot, width: tickWidth)
                     }
-                    .frame(width: metrics.widgetSlotWidth, height: 0, alignment: .bottom)
+                    .frame(width: slotWidth, height: 0, alignment: .bottom)
                     .allowsHitTesting(false)
                 }
             }

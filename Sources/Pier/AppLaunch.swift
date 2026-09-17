@@ -55,6 +55,12 @@ enum AppLaunch {
         }
     }
 
+    static func openActivityMonitor() {
+        if let app = NativeDock.application(bundleID: CPULoad.bundleID, fallbackName: "Activity Monitor") {
+            open(app)
+        }
+    }
+
     static func openCalendar() {
         if let calendar = NativeDock.application(bundleID: AppMarks.calendarBundleID, fallbackName: "Calendar") {
             open(calendar)

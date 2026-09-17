@@ -5,6 +5,7 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
     case cursor
     case grokBot
     case docker
+    case activityMonitor
     case calendar
     case weather
 
@@ -15,6 +16,7 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .cursor: return NativeDock.cursorBundleID
         case .grokBot: return NativeDock.grokBotBundleID
         case .docker: return Docker.desktopBundleID
+        case .activityMonitor: return CPULoad.bundleID
         case .calendar: return AppMarks.calendarBundleID
         case .weather: return "com.apple.weather"
         }
@@ -25,12 +27,13 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .cursor: return "Cursor"
         case .grokBot: return "Grok Bot"
         case .docker: return "Docker"
+        case .activityMonitor: return "Activity Monitor"
         case .calendar: return "Calendar"
         case .weather: return "Weather"
         }
     }
 
-    static let standard: [WidgetKind] = [.cursor, .grokBot, .docker, .calendar, .weather]
+    static let standard: [WidgetKind] = [.cursor, .grokBot, .docker, .activityMonitor, .calendar, .weather]
 
     var isInstalled: Bool {
         if self == .docker, Docker.cliURL() != nil { return true }

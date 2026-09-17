@@ -34,6 +34,7 @@ struct DockSnapshot: Equatable {
     var weatherCount: Int = 1
     var grokBot: GrokBotSnapshot?
     var docker: DockerSnapshot? = nil
+    var cpu: CPULoadSnapshot? = nil
 
     static let empty = DockSnapshot(
         apps: [],
@@ -43,6 +44,7 @@ struct DockSnapshot: Equatable {
         calendar: nil,
         weather: nil,
         grokBot: nil,
-        docker: nil
+        docker: nil,
+        cpu: nil
     )
 }

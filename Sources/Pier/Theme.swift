@@ -122,6 +122,7 @@ enum Theme {
         var widgetIcon: CGFloat { max(18, (tileSize * 0.72).rounded()) }
         var widgetGlyph: CGFloat { max(22, tileSize.rounded()) }
         var widgetSlotWidth: CGFloat { max(148, (tileSize * 3.6).rounded()) }
+        var activitySlotWidth: CGFloat { max(176, (tileSize * 4.4).rounded()) }
         var dividerWidth: CGFloat { 12 }
         var dividerHeight: CGFloat { max(16, (tileSize * 0.72).rounded()) }
         var resizeHandle: CGFloat { 10 }
@@ -131,6 +132,7 @@ enum Theme {
         func itemWidth(_ item: StripItem) -> CGFloat {
             switch item {
             case .app: return tileWidth
+            case .widget(.activityMonitor): return activitySlotWidth
             case .widget: return widgetSlotWidth
             }
         }

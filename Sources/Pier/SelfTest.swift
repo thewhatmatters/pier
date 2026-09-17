@@ -252,8 +252,8 @@ enum SelfTest {
         check("dark and light palettes exist", Theme.Appearance.allCases.count == 2)
         check("halftone renders a symbol", Halftone.image(systemName: "cloud.fill", pointSize: 24).size.width > 0)
         check("calendar day is numeric", Int(AppMarks.calendarDay()) != nil)
-        check("widget order fills missing", WidgetKind.normalized([.weather]) == [.weather, .cursor, .grokBot, .docker, .calendar])
-        check("widget order drops dupes", WidgetKind.normalized([.cursor, .cursor, .weather]) == [.cursor, .weather, .grokBot, .docker, .calendar])
+        check("widget order fills missing", WidgetKind.normalized([.weather]) == [.weather, .cursor, .grokBot, .docker, .activityMonitor, .calendar])
+        check("widget order drops dupes", WidgetKind.normalized([.cursor, .cursor, .weather]) == [.cursor, .weather, .grokBot, .docker, .activityMonitor, .calendar])
         let safari = PinnedApp(bundleID: "com.apple.Safari", name: "Safari", path: "/Applications/Safari.app")
         let mail = PinnedApp(bundleID: "com.apple.mail", name: "Mail", path: "/System/Applications/Mail.app")
         let mixed: [StripItem] = [.app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather)]
@@ -261,7 +261,7 @@ enum SelfTest {
         check(
             "strip keeps interleave and fills widgets",
             StripItem.normalized(mixed, apps: [safari, mail], installed: allWidgets) == [
-                .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.grokBot), .widget(.docker), .widget(.calendar)
+                .app(safari.bundleID), .widget(.cursor), .app(mail.bundleID), .widget(.weather), .widget(.grokBot), .widget(.docker), .widget(.activityMonitor), .widget(.calendar)
             ]
         )
         let cursor = PinnedApp(bundleID: NativeDock.cursorBundleID, name: "Cursor", path: "/Applications/Cursor.app")
@@ -271,11 +271,12 @@ enum SelfTest {
                 [.app(cursor.bundleID), .widget(.cursor), .app(safari.bundleID)],
                 apps: [cursor, safari],
                 installed: allWidgets
-            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.grokBot), .widget(.docker), .widget(.calendar), .widget(.weather)]
+            ) == [.widget(.cursor), .app(safari.bundleID), .widget(.grokBot), .widget(.docker), .widget(.activityMonitor), .widget(.calendar), .widget(.weather)]
         )
         check("cursor widget hosts Cursor", WidgetKind.cursor.bundleID == NativeDock.cursorBundleID)
         check("grok bot widget hosts Grok Bot", WidgetKind.grokBot.bundleID == NativeDock.grokBotBundleID)
         check("docker widget hosts Docker Desktop", WidgetKind.docker.bundleID == Docker.desktopBundleID)
+        check("activity widget hosts Activity Monitor", WidgetKind.activityMonitor.bundleID == CPULoad.bundleID)
         check("calendar widget hosts Calendar", WidgetKind.calendar.bundleID == AppMarks.calendarBundleID)
         check("weather widget hosts Weather", WidgetKind.weather.bundleID == "com.apple.weather")
         check(
@@ -290,7 +291,7 @@ enum SelfTest {
                 apps: [calendarApp, safari],
                 iconOnly: [.calendar],
                 installed: allWidgets
-            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.grokBot), .widget(.docker), .widget(.weather)]
+            ) == [.app(calendarApp.bundleID), .app(safari.bundleID), .widget(.cursor), .widget(.grokBot), .widget(.docker), .widget(.activityMonitor), .widget(.weather)]
         )
         check(
             "missing host app hides its widget",
@@ -458,6 +459,28 @@ enum SelfTest {
         check("docker engine-off caption", DockerSnapshot.empty.caption == "Engine off")
         check("docker cycle wraps", Docker.cycleIndex(2, count: 3, by: 1) == 0)
         check("docker selected headline is the name", dockerSnap.selected?.headline == "redis")
+        let cpuA = CPULoad.Ticks(user: 100, system: 20, idle: 80, nice: 0)
+        let cpuB = CPULoad.Ticks(user: 130, system: 30, idle: 140, nice: 0)
+        let cpuSample = CPULoad.sample(previous: cpuA, current: cpuB)
+        check("cpu sample splits user system idle", cpuSample?.user == 30 && cpuSample?.system == 10 && cpuSample?.idle == 60)
+        check("cpu percent rounds", CPULoad.percent(13.4) == "13%")
+        check(
+            "cpu history stays capped",
+            CPULoad.appending(Array(repeating: cpuSample!, count: 40), cpuSample!, limit: 30).count == 30
+        )
+        let activityApp = PinnedApp(
+            bundleID: CPULoad.bundleID,
+            name: "Activity Monitor",
+            path: "/System/Applications/Utilities/Activity Monitor.app"
+        )
+        check(
+            "activity widget swallows its pin",
+            StripItem.normalized(
+                [.app(activityApp.bundleID), .widget(.activityMonitor), .app(safari.bundleID)],
+                apps: [activityApp, safari],
+                installed: [.activityMonitor]
+            ) == [.widget(.activityMonitor), .app(safari.bundleID)]
+        )
         let grokSnap = GrokBotSnapshot(seats: grokSeats, selectedIndex: 0, signedIn: true)
         check("grok caption working", grokSnap.selected?.caption == "Working")
         check("grok caption needs you", grokSnap.selecting(1).selected?.caption == "Needs you")
